@@ -66,6 +66,22 @@ async function nextRxNo(){
   return 'RX-'+String(n).padStart(4,'0');
 }
 
+/* ═══ ROLE-BASED ACCESS ═══ */
+let _currentRole = 'admin'; /* default: admin (backward compat) */
+
+async function getUserRole(email) {
+  if (!email) return 'admin';
+  try {
+    const snap = await window._fb.getDocs(window._fb.collection(window._db, 'users'));
+    const userDoc = snap.docs.find(d => d.id === email);
+    if (userDoc) return userDoc.data().role || 'staff';
+  } catch (e) { console.warn('Could not fetch role, defaulting to admin'); }
+  return 'admin';
+}
+
+function isAdmin() { return _currentRole === 'admin'; }
+function isStaff() { return _currentRole === 'staff'; }
+
 /* ═══ MEDICINE DATA ═══ */
 const MEDS=[
   {name:"Amoxicillin 500mg",dosage:"500mg",rate:9},
@@ -336,8 +352,18 @@ function renderHistPage(list){
     el.innerHTML='<div class="empty-state"><p>No prescriptions found.<br>Create and save your first prescription.</p></div>';
     pg.innerHTML='';return;
   }
+  const isS = isStaff();
   el.innerHTML=slice.map(r=>`
-    <div class="hist-item">
+    <div class="hist-item" style="${isS?'cursor:default':''}">
+      ${isS ? `
+      <span class="hi-amt">₹${r.grand}</span>
+      <div class="hi-name">${r.patientName||'—'}
+        <span class="hi-badge">${r.rxno||''}</span>
+        <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
+      </div>
+      <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
+      <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
+      ` : `
       <div onclick="loadRx('${r.id}')" style="cursor:pointer;flex:1">
       <button class="btn-del-hist" onclick="event.stopPropagation();deleteRx('${r.id}')">✕</button>
       <span class="hi-amt">₹${r.grand}</span>
@@ -352,6 +378,7 @@ function renderHistPage(list){
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
+      `}
     </div>`).join('');
   if(pages<=1){pg.innerHTML='';return;}
   let h=`<button class="pg-btn" onclick="goPg(${histPage-1})" ${histPage===1?'disabled':''}>‹ Prev</button>`;
@@ -367,6 +394,7 @@ function renderHistPage(list){
 function goPg(p){histPage=p;filterHist();window.scrollTo(0,0);}
 
 function loadRx(id){
+  if(isStaff()){showToast('View only — cannot edit history','warn');return;}
   const rx=_histCache.find(r=>r.id===id);if(!rx)return;
   qs('pName').value   =rx.patientName   ||'';
   qs('pAge').value    =rx.patientAge    ||'';
@@ -384,6 +412,7 @@ function loadRx(id){
 }
 
 async function deleteRx(id){
+  if(isStaff()){showToast('Staff cannot delete prescriptions','err');return;}
   if(!confirm('Delete this prescription permanently?'))return;
   try{
     await deleteRxById(id);
@@ -416,6 +445,7 @@ window.addEventListener('offline',updateNet);
 
 /* ─── EXPORT ─── */
 async function exportAll(){
+  if(isStaff()){showToast('Export not available for staff','err');return;}
   try{
     const all=await getAllRx();
     const blob=new Blob([JSON.stringify({meta:{exportedAt:new Date().toISOString(),clinic:'Sai Dental Clinic',count:all.length},prescriptions:all},null,2)],{type:'application/json'});
@@ -543,6 +573,41 @@ document.addEventListener('click',e=>{
    NEW FEATURES
 ═══════════════════════════════════════════ */
 
+/* ─── ROLE-BASED UI ─── */
+function applyRoleUI() {
+  const isS = isStaff();
+  const existing = document.getElementById('sd-role-style');
+  if (existing) existing.remove();
+
+  if (isS) {
+    /* Hide admin-only tabs: Dashboard, Appointments, Inventory */
+    ['dash', 'apt', 'inv'].forEach(t => {
+      const btn = document.querySelector(`.tab[onclick*="'${t}'"]`);
+      if (btn) btn.style.display = 'none';
+    });
+    /* Hide specific admin buttons by onclick handler name */
+    ['exportAll', 'importJSON'].forEach(fn => {
+      const btn = document.querySelector(`[onclick*="${fn}"]`);
+      if (btn) btn.style.display = 'none';
+    });
+    /* Inject CSS for read-only history */
+    const style = document.createElement('style');
+    style.id = 'sd-role-style';
+    style.textContent = '.btn-del-hist{display:none!important}';
+    document.head.appendChild(style);
+  }
+}
+  /* Remove any old role styles */
+  const existing = document.getElementById('sd-role-style');
+  if (existing) existing.remove();
+  if (isS) {
+    const style = document.createElement('style');
+    style.id = 'sd-role-style';
+    style.textContent = '.btn-del-hist,.btn-export{display:none!important}';
+    document.head.appendChild(style);
+  }
+}
+
 /* ─── MODAL HELPERS ─── */
 function closeModal(ev,id){
   if(ev&&ev.target!==ev.currentTarget)return;
@@ -624,6 +689,7 @@ setInterval(()=>{
 
 /* ─── IMPORT JSON ─── */
 function importJSON(){
+  if(isStaff()){showToast('Import not available for staff','err');return;}
   qs('importFileInput').click();
 }
 async function handleImport(ev){
@@ -1071,6 +1137,11 @@ waitFB(()=>{
       qs('appMain').style.display='block';
       qs('userEmail').textContent=user.email;
       qs('userAvatar').textContent=user.email[0].toUpperCase();
+
+      /* Fetch user role */
+      _currentRole = await getUserRole(user.email);
+      applyRoleUI();
+
       updateNet();
       qs('todayDate').textContent=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
       qs('notes').value='Avoid hot food for 24 hrs. Rinse with warm salt water twice daily. Take medicines after food.';
