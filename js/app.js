@@ -74,8 +74,13 @@ async function getUserRole(email) {
   try {
     const docRef = window._fb.doc(window._fb.collection(window._db, 'users'), email);
     const snap = await window._fb.getDoc(docRef);
-    if (snap.exists()) return snap.data().role || 'staff';
-  } catch (e) { console.warn('Could not fetch role for', email, '- defaulting to admin'); }
+    if (snap.exists()) {
+      const role = snap.data().role;
+      console.log('Role fetched for', email, ':', role);
+      return role || 'staff';
+    }
+    console.warn('No role doc found for', email, '- defaulting to admin');
+  } catch (e) { console.warn('Role fetch error for', email, ':', e.message, '- defaulting to admin'); }
   return 'admin';
 }
 
@@ -1132,8 +1137,20 @@ waitFB(()=>{
       qs('userEmail').textContent=user.email;
       qs('userAvatar').textContent=user.email[0].toUpperCase();
 
-      /* Fetch user role */
-      _currentRole = await getUserRole(user.email);
+      /* Fetch user role (normalize email to lowercase) */
+      _currentRole = await getUserRole(user.email.toLowerCase());
+
+      /* Show role badge in sync bar */
+      const roleBadge = document.createElement('span');
+      roleBadge.id = 'roleBadge';
+      roleBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;margin-left:6px';
+      roleBadge.style.background = isStaff() ? '#f59e0b' : 'var(--teal)';
+      roleBadge.style.color = '#fff';
+      roleBadge.textContent = isStaff() ? 'STAFF' : 'ADMIN';
+      const existingBadge = document.getElementById('roleBadge');
+      if (existingBadge) existingBadge.remove();
+      qs('userEmail').after(roleBadge);
+
       applyRoleUI();
 
       updateNet();
