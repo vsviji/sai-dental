@@ -597,16 +597,6 @@ function applyRoleUI() {
     document.head.appendChild(style);
   }
 }
-  /* Remove any old role styles */
-  const existing = document.getElementById('sd-role-style');
-  if (existing) existing.remove();
-  if (isS) {
-    const style = document.createElement('style');
-    style.id = 'sd-role-style';
-    style.textContent = '.btn-del-hist,.btn-export{display:none!important}';
-    document.head.appendChild(style);
-  }
-}
 
 /* ─── MODAL HELPERS ─── */
 function closeModal(ev,id){
