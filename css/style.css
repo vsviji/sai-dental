@@ -213,3 +213,149 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   th,td{font-size:10px!important;padding:4px!important;white-space:normal!important}
   body{zoom:.8}
 }
+
+/* ═══════════════════════════════════════════
+   NEW FEATURES (added improvements)
+════════════════════════════════════════════ */
+
+/* ── DARK MODE ── */
+[data-theme="dark"]{
+  --teal:#0a5a47;--teal-l:#0d3d32;--teal-m:#2a8a72;--teal-d:#0d8a6a;--teal-b:#1a6a55;
+  --red:#e06060;--gold:#d4a030;--gold-l:#3a2e10;
+  --ink:#e5e7eb;--muted:#9ca3af;--hint:#6b7280;
+  --bg:#0f1218;--surface:#1a1f2e;--surf2:#1e2538;
+  --border:#2a3040;--border2:#354050;
+  --shadow:0 1px 3px rgba(0,0,0,0.3),0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md:0 4px 12px rgba(0,0,0,0.4),0 2px 4px rgba(0,0,0,0.3);
+}
+[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{background:#1a1f2e;color:var(--ink);border-color:var(--border2)}
+[data-theme="dark"] .clinic-top{background:var(--teal-d)}
+[data-theme="dark"] .doc-strip{background:var(--teal-l);border-color:var(--teal-b)}
+[data-theme="dark"] thead tr{background:var(--teal-d)}
+[data-theme="dark"] .bill-grand{background:var(--teal-d)}
+[data-theme="dark"] .login-overlay{background:var(--bg)}
+[data-theme="dark"] .login-card{background:var(--surface);border-color:var(--border)}
+[data-theme="dark"] .tab.on{background:var(--teal-d)}
+[data-theme="dark"] .hist-item:hover{background:var(--teal-l)}
+[data-theme="dark"] tbody tr:hover td{background:var(--teal-l)}
+[data-theme="dark"] .user-pill{background:var(--surf2);border-color:var(--border)}
+[data-theme="dark"] .pat-dropdown{background:var(--surface);border-color:var(--teal-m)}
+[data-theme="dark"] .pwa-banner{background:var(--teal-l);border-color:var(--teal-b);color:var(--ink)}
+[data-theme="dark"] .toast{background:var(--teal-d)}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
+.modal-card{background:var(--surface);border-radius:var(--rxl);box-shadow:var(--shadow-md);border:1px solid var(--border);width:480px;max-width:100%;max-height:85vh;overflow-y:auto}
+.modal-card-wide{width:700px}
+.modal-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--surf2);border-radius:var(--rxl) var(--rxl) 0 0;position:sticky;top:0;z-index:10}
+.modal-title{font-size:13px;font-weight:500;color:var(--teal-d);text-transform:uppercase;letter-spacing:.7px}
+.modal-close{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;line-height:1}
+.modal-close:hover{background:var(--teal-l);color:var(--teal)}
+.modal-body{padding:18px 20px}
+
+/* ── DASHBOARD ── */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.dash-stat{background:var(--surf2);border:1px solid var(--border);border-radius:var(--rl);padding:16px;text-align:center}
+.dash-stat-val{font-family:'Playfair Display',serif;font-size:28px;font-weight:600;color:var(--teal-d)}
+.dash-stat-lbl{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+.dash-chart{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:4px;align-items:end;padding:10px 0;min-height:120px}
+.dash-bar{background:var(--teal-m);border-radius:4px 4px 0 0;min-height:4px;transition:height .4s;position:relative;cursor:pointer}
+.dash-bar:hover{background:var(--teal)}
+.dash-bar-lbl{font-size:9px;color:var(--muted);text-align:center;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dx-item{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.dx-item:last-child{border-bottom:none}
+.dx-name{color:var(--ink);font-weight:500}
+.dx-count{color:var(--teal-d);font-weight:600;font-size:14px}
+
+/* ── APPOINTMENTS ── */
+.apt-toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.apt-toolbar input[type=date]{max-width:180px}
+.apt-nav{display:flex;gap:6px;align-items:center;margin-left:auto}
+.apt-nav button{padding:6px 12px;font-size:12px}
+.apt-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;background:var(--surface);transition:all .2s}
+.apt-item:hover{border-color:var(--teal-m)}
+.apt-time{font-weight:600;color:var(--teal-d);font-size:14px;min-width:60px}
+.apt-info-name{font-size:14px;font-weight:500;color:var(--ink)}
+.apt-info-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.apt-actions{display:flex;gap:6px}
+.apt-actions button{background:none;border:none;cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;color:var(--muted)}
+.apt-actions button:hover{background:var(--teal-l);color:var(--teal)}
+.apt-actions .apt-del:hover{color:var(--red);background:#FCEBEB}
+.apt-empty{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+.apt-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* ── INVENTORY ── */
+.inv-item{display:grid;grid-template-columns:1fr auto auto auto auto;gap:12px;align-items:center;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;background:var(--surface);transition:all .2s}
+.inv-item:hover{border-color:var(--teal-m)}
+.inv-name{font-size:14px;font-weight:500;color:var(--ink)}
+.inv-qty{font-size:14px;font-weight:600;color:var(--teal-d);text-align:center;min-width:50px}
+.inv-qty.low{color:#f59e0b}
+.inv-qty.out{color:var(--red)}
+.inv-unit{font-size:12px;color:var(--muted);text-align:center;min-width:60px}
+.inv-actions{display:flex;gap:6px;justify-content:flex-end}
+.inv-actions button{background:none;border:none;cursor:pointer;font-size:13px;padding:4px 8px;border-radius:6px;color:var(--muted)}
+.inv-actions button:hover{color:var(--teal)}
+.inv-actions .inv-del:hover{color:var(--red);background:#FCEBEB}
+.inv-empty{text-align:center;padding:32px;color:var(--muted);font-size:13px}
+
+/* ── DENTAL CHART ── */
+.dental-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;max-width:500px;margin:0 auto}
+.tooth{width:100%;aspect-ratio:1;border:2px solid var(--border2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .2s;background:var(--surface);user-select:none}
+.tooth:hover{border-color:var(--teal-m);background:var(--teal-l)}
+.tooth.marked{background:var(--teal);color:#fff;border-color:var(--teal);box-shadow:0 0 0 3px rgba(93,202,165,.3)}
+.tooth.marked:hover{background:var(--teal-d)}
+.tooth-lbl{font-size:9px;color:var(--hint);text-align:center;margin-top:2px}
+.dental-section{text-align:center;margin-bottom:16px}
+.dental-section-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px}
+
+/* ── PATIENT PROFILE ── */
+.profile-header{display:flex;gap:16px;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.profile-avatar{width:48px;height:48px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;font-weight:600;flex-shrink:0}
+.profile-name{font-size:18px;font-weight:600;color:var(--ink)}
+.profile-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.profile-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.profile-stat{text-align:center;padding:12px;background:var(--surf2);border:1px solid var(--border);border-radius:var(--r)}
+.profile-stat-val{font-size:20px;font-weight:600;color:var(--teal-d)}
+.profile-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+.profile-visit{border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:all .2s}
+.profile-visit:hover{background:var(--teal-l);border-color:var(--teal-m)}
+.profile-visit-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.profile-visit-rx{font-size:12px;color:var(--teal);font-weight:500}
+.profile-visit-date{font-size:12px;color:var(--muted)}
+.profile-visit-dx{font-size:12px;color:var(--ink)}
+.profile-visit-amt{font-size:13px;color:var(--teal-d);font-weight:500}
+
+/* ── TEMPLATES ── */
+.tpl-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;background:var(--surface)}
+.tpl-item:hover{border-color:var(--teal-m)}
+.tpl-name{font-size:13px;font-weight:500;color:var(--ink)}
+.tpl-meds{font-size:11px;color:var(--muted);margin-top:2px}
+.tpl-actions{display:flex;gap:6px}
+.tpl-actions button{background:none;border:none;cursor:pointer;font-size:12px;padding:4px 8px;border-radius:6px;color:var(--muted)}
+.tpl-actions button:hover{color:var(--teal);background:var(--teal-l)}
+.tpl-actions .tpl-del:hover{color:var(--red);background:#FCEBEB}
+.tpl-empty{text-align:center;padding:24px;color:var(--muted);font-size:13px}
+
+/* ── INVOICE ── */
+.invoice-wrap{display:none}
+.invoice-wrap.show{display:block}
+@media print{
+  .invoice-wrap.show{display:block!important}
+  .invoice-wrap.show ~ *{display:none!important}
+}
+
+/* ── COLOR PICKER FOR DENTAL CHART ── */
+.tooth-legend{display:flex;gap:16px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.tooth-legend-item{display:flex;align-items:center;gap:6px}
+.tooth-legend-swatch{width:16px;height:16px;border-radius:4px;border:1px solid var(--border2)}
+
+/* ── RESPONSIVE TWEAKS ── */
+@media(max-width:620px){
+  .dash-grid{grid-template-columns:repeat(2,1fr)}
+  .inv-item{grid-template-columns:1fr auto auto}
+  .apt-form-grid{grid-template-columns:1fr}
+  .modal-card-wide{width:100%}
+  .profile-stats{grid-template-columns:repeat(2,1fr)}
+  .dental-grid{grid-template-columns:repeat(4,1fr)}
+}
+

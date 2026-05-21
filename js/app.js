@@ -250,6 +250,21 @@ function fillPatient(id){
   qs('patDropdown').className='pat-dropdown';
   qs('patSearchWrap').style.display='none';
   showToast('Patient loaded: '+rx.patientName);
+  /* Show visit history inline */
+  const existing=qs('patVisitsInline');
+  if(existing)existing.remove();
+  const visits=_histCache.filter(r=>
+    r.id!==id&&(r.patientName||'').toLowerCase()===(rx.patientName||'').toLowerCase()&&
+    (!rx.patientContact||!r.patientContact||(r.patientContact||'').includes(rx.patientContact)||(rx.patientContact||'').includes(r.patientContact))
+  );
+  if(visits.length){
+    const div=document.createElement('div');div.id='patVisitsInline';
+    div.style.cssText='margin-top:6px;padding:8px 12px;background:var(--gold-l);border:1px solid var(--gold);border-radius:var(--r);font-size:12px;color:var(--gold)';
+    div.innerHTML='<strong>'+visits.length+' previous visit(s):</strong> '+visits.slice(0,3).map(r=>r.rxno+' ('+r.date+')').join(', ')+(visits.length>3?'…':'');
+    div.onclick=()=>showPatientProfile(id);
+    div.style.cursor='pointer';
+    qs('pName').parentNode.appendChild(div);
+  }
 }
 
 /* ─── SAVE ─── */
@@ -322,7 +337,8 @@ function renderHistPage(list){
     pg.innerHTML='';return;
   }
   el.innerHTML=slice.map(r=>`
-    <div class="hist-item" onclick="loadRx('${r.id}')">
+    <div class="hist-item">
+      <div onclick="loadRx('${r.id}')" style="cursor:pointer;flex:1">
       <button class="btn-del-hist" onclick="event.stopPropagation();deleteRx('${r.id}')">✕</button>
       <span class="hi-amt">₹${r.grand}</span>
       <div class="hi-name">${r.patientName||'—'}
@@ -331,6 +347,11 @@ function renderHistPage(list){
       </div>
       <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
       <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
+        <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
+      </div>
     </div>`).join('');
   if(pages<=1){pg.innerHTML='';return;}
   let h=`<button class="pg-btn" onclick="goPg(${histPage-1})" ${histPage===1?'disabled':''}>‹ Prev</button>`;
@@ -408,11 +429,17 @@ async function exportAll(){
 
 /* ─── TABS ─── */
 function sw(tab,btn){
-  qs('rxTab').style.display  =tab==='rx'  ?'block':'none';
-  qs('histTab').style.display=tab==='hist'?'block':'none';
+  const tabs=['rx','hist','dash','apt','inv'];
+  tabs.forEach(t=>{
+    const el=qs(t+'Tab');
+    if(el)el.style.display=t===tab?'block':'none';
+  });
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   if(tab==='hist')loadHist();
+  if(tab==='dash')renderDash();
+  if(tab==='apt'){setCurAptWeek();renderApts();}
+  if(tab==='inv')renderInv();
 }
 function printRx(){
   document.title=qs('rxNo').textContent+' — '+(qs('pName').value||'Patient')+' — Sai Dental';
@@ -512,6 +539,530 @@ document.addEventListener('click',e=>{
   if(w&&!w.contains(e.target))qs('patDropdown').className='pat-dropdown';
 });
 
+/* ═══════════════════════════════════════════
+   NEW FEATURES
+═══════════════════════════════════════════ */
+
+/* ─── MODAL HELPERS ─── */
+function closeModal(ev,id){
+  if(ev&&ev.target!==ev.currentTarget)return;
+  qs(id).style.display='none';
+}
+
+/* ─── DARK MODE ─── */
+function toggleDark(){
+  const html=document.documentElement;
+  const isDark=html.getAttribute('data-theme')==='dark';
+  if(isDark){html.removeAttribute('data-theme');localStorage.setItem('sd-theme','light');qs('darkBtn').textContent='🌙 Dark';}
+  else{html.setAttribute('data-theme','dark');localStorage.setItem('sd-theme','dark');qs('darkBtn').textContent='☀️ Light';}
+}
+(function initTheme(){
+  const saved=localStorage.getItem('sd-theme');
+  if(saved==='dark'||(!saved&&window.matchMedia('(prefers-color-scheme: dark)').matches)){
+    document.documentElement.setAttribute('data-theme','dark');
+    if(qs('darkBtn'))qs('darkBtn').textContent='☀️ Light';
+  }
+})();
+
+/* ─── MULTI-DOCTOR SUPPORT ─── */
+const DOCTORS = [
+  {name:'Dr. S. K. Srinivas',deg:'BDS, FDS (Endodontics)',reg:'TNDC-31721'},
+  {name:'Dr. S. K. Srinivas',deg:'BDS, FDS',reg:'TNDC-31721'}
+];
+function getDoctors(){
+  try{return JSON.parse(localStorage.getItem('sd-doctors')||'[]');}catch{return DOCTORS;}
+}
+function saveDoctors(list){
+  localStorage.setItem('sd-doctors',JSON.stringify(list.length?list:DOCTORS));
+}
+function populateDoctorSelect(){
+  const sel=qs('aptDoctor');
+  if(!sel)return;
+  const docs=getDoctors();
+  sel.innerHTML=docs.map((d,i)=>`<option value="${i}">${d.name}</option>`).join('');
+}
+/* Expose doctors for HTML */
+window.getDoctors=getDoctors;
+
+/* ─── AUTO-SAVE DRAFTS ─── */
+let _draftTimer=null;
+function saveDraft(){
+  const data={
+    pName:qs('pName')?.value||'',pAge:qs('pAge')?.value||'',pGender:qs('pGender')?.value||'',
+    pContact:qs('pContact')?.value||'',pBP:qs('pBP')?.value||'',pDx:qs('pDx')?.value||'',
+    pAllergy:qs('pAllergy')?.value||'',pRef:qs('pRef')?.value||'',
+    notes:qs('notes')?.value||'',followup:qs('followup')?.value||'',
+    rows:rows.map(r=>({...r}))
+  };
+  localStorage.setItem('sd-draft',JSON.stringify(data));
+}
+function restoreDraft(){
+  try{
+    const raw=localStorage.getItem('sd-draft');
+    if(!raw)return;
+    const d=JSON.parse(raw);
+    if(!d.pName&&!d.rows?.length)return;
+    if(!confirm('You have an unsaved draft. Restore it?')){localStorage.removeItem('sd-draft');return;}
+    qs('pName').value=d.pName||'';
+    qs('pAge').value=d.pAge||'';
+    qs('pGender').value=d.pGender||'';
+    qs('pContact').value=d.pContact||'';
+    qs('pBP').value=d.pBP||'';
+    qs('pDx').value=d.pDx||'';
+    qs('pAllergy').value=d.pAllergy||'';
+    qs('pRef').value=d.pRef||'';
+    qs('notes').value=d.notes||'';
+    qs('followup').value=d.followup||'';
+    if(d.rows?.length){rows=[];rid=0;d.rows.forEach(m=>addRow(m));}
+    showToast('Draft restored');
+  }catch(e){localStorage.removeItem('sd-draft');}
+}
+/* Auto-save every 10s when on rx tab */
+setInterval(()=>{
+  if(qs('rxTab')&&qs('rxTab').style.display!=='none')saveDraft();
+},10000);
+
+/* ─── IMPORT JSON ─── */
+function importJSON(){
+  qs('importFileInput').click();
+}
+async function handleImport(ev){
+  const file=ev.target.files[0];
+  if(!file)return;
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    const list=data.prescriptions||data||[];
+    if(!Array.isArray(list)||!list.length){showToast('Invalid backup file','err');return;}
+    let count=0;
+    for(const rx of list){
+      if(!rx.id||!rx.patientName)continue;
+      try{await putRx(rx);count++;}catch(e){}
+    }
+    showToast('Imported '+count+' prescriptions');
+    ev.target.value='';
+    loadHist();
+  }catch(e){showToast('Import failed: '+e.message,'err');}
+}
+
+/* ─── DUPLICATE RX ─── */
+function duplicateRx(id){
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx)return;
+  rows=[];rid=0;
+  qs('pName').value=rx.patientName||'';
+  qs('pAge').value=rx.patientAge||'';
+  qs('pGender').value=rx.patientGender||'';
+  qs('pContact').value=rx.patientContact||'';
+  qs('pBP').value=rx.patientBP||'';
+  qs('pDx').value=rx.patientDx||'';
+  qs('pAllergy').value=rx.patientAllergy||'';
+  qs('pRef').value=rx.patientRef||'';
+  qs('notes').value=rx.notes||'';
+  qs('followup').value=rx.followup||'';
+  (rx.medicines||[]).forEach(m=>addRow(m));
+  sw('rx',document.querySelectorAll('.tab')[0]);
+  showToast('Duplicated: '+rx.rxno);
+}
+
+/* ─── PATIENT VISIT HISTORY ─── */
+function showPatientVisits(name,contact){
+  if(!name)return;
+  const visits=_histCache.filter(r=>
+    (r.patientName||'').toLowerCase()===name.toLowerCase()&&
+    (!contact||(r.patientContact||'').includes(contact))
+  );
+  if(visits.length<=1)return;
+  let html='<div class="profile-visits" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">'+
+    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;font-weight:500">Previous Visits ('+visits.length+')</div>';
+  visits.slice(0,10).forEach(r=>{
+    html+='<div class="profile-visit" onclick="loadRx(\''+r.id+'\')">'+
+      '<div class="profile-visit-top"><span class="profile-visit-rx">'+r.rxno+'</span><span class="profile-visit-date">'+r.date+'</span></div>'+
+      '<div class="profile-visit-dx">'+(r.patientDx||'—')+'</div>'+
+      '</div>';
+  });
+  html+='</div>';
+  return html;
+}
+
+/* ─── PATIENT PROFILE ─── */
+function showPatientProfile(id){
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx)return;
+  const name=rx.patientName||'';
+  const contact=rx.patientContact||'';
+  const visits=_histCache.filter(r=>
+    (r.patientName||'').toLowerCase()===name.toLowerCase()&&
+    (!contact||(r.patientContact||'').includes(contact))
+  );
+  const totalAmt=visits.reduce((s,r)=>s+(r.grand||0),0);
+  const totalRx=visits.length;
+  const commonDx=[...new Set(visits.map(r=>r.patientDx).filter(Boolean))].slice(0,3).join(', ');
+  qs('patProfileTitle').textContent=name;
+  let html='<div class="profile-header">'+
+    '<div class="profile-avatar">'+name[0]+'</div>'+
+    '<div><div class="profile-name">'+name+'</div>'+
+    '<div class="profile-meta">'+(contact||'')+' · '+commonDx+'</div></div></div>'+
+    '<div class="profile-stats">'+
+    '<div class="profile-stat"><div class="profile-stat-val">'+totalRx+'</div><div class="profile-stat-lbl">Total Visits</div></div>'+
+    '<div class="profile-stat"><div class="profile-stat-val">₹'+totalAmt+'</div><div class="profile-stat-lbl">Total Amount</div></div>'+
+    '<div class="profile-stat"><div class="profile-stat-val">₹'+(totalRx?Math.round(totalAmt/totalRx):0)+'</div><div class="profile-stat-lbl">Avg per Visit</div></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;font-weight:500">Visit History</div>';
+  visits.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')).forEach(r=>{
+    html+='<div class="profile-visit" onclick="loadRx(\''+r.id+'\')">'+
+      '<div class="profile-visit-top"><span class="profile-visit-rx">'+r.rxno+'</span><span class="profile-visit-date">'+r.date+'</span></div>'+
+      '<div class="profile-visit-dx">'+(r.patientDx||'—')+(r.medicines?.length?' · '+r.medicines.length+' medicines':'')+'</div>'+
+      '<div class="profile-visit-amt">₹'+(r.grand||0)+'</div></div>';
+  });
+  qs('patProfileBody').innerHTML=html;
+  qs('patProfileModal').style.display='flex';
+}
+
+/* ─── CUSTOMIZABLE TEMPLATES ─── */
+function getTemplates(){
+  try{return JSON.parse(localStorage.getItem('sd-templates')||'[]');}catch{return [];}
+}
+function saveTemplateList(list){
+  localStorage.setItem('sd-templates',JSON.stringify(list));
+}
+function saveCustomTemplate(){
+  const name=qs('tplNameInput').value.trim();
+  if(!name){showToast('Enter a template name','err');return;}
+  if(!rows.length){showToast('Add at least one medicine','err');return;}
+  const tpl={name,medicines:rows.map(r=>({name:r.name,dosage:r.dosage,freq:r.freq,dur:r.dur,qty:r.qty,rate:r.rate,inst:r.inst})),notes:qs('notes').value,followup:qs('followup').value};
+  const list=getTemplates();
+  list.unshift(tpl);
+  saveTemplateList(list);
+  qs('tplNameInput').value='';
+  renderTplList();
+  showToast('Template saved: '+name);
+}
+function renderTplList(){
+  const el=qs('tplList');
+  const list=getTemplates();
+  if(!list.length){el.innerHTML='<div class="tpl-empty">No custom templates yet. Save your current prescription as a template.</div>';return;}
+  el.innerHTML=list.map((t,i)=>'<div class="tpl-item">'+
+    '<div><div class="tpl-name">'+t.name+'</div><div class="tpl-meds">'+(t.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,4).join(', ')+(t.medicines?.length>4?'…':'')+'</div></div>'+
+    '<div class="tpl-actions">'+
+    '<button onclick="loadCustomTemplate('+i+')" title="Load">📋 Load</button>'+
+    '<button class="tpl-del" onclick="deleteCustomTemplate('+i+')" title="Delete">🗑️</button>'+
+    '</div></div>').join('');
+}
+function loadCustomTemplate(i){
+  const list=getTemplates();
+  const t=list[i];
+  if(!t)return;
+  rows=[];rid=0;(t.medicines||[]).forEach(m=>addRow(m));
+  qs('notes').value=t.notes||'';
+  qs('followup').value=t.followup||'';
+  renderRows();
+  closeModal(null,'tplModal');
+  showToast('Template loaded: '+t.name);
+}
+function deleteCustomTemplate(i){
+  if(!confirm('Delete this template?'))return;
+  const list=getTemplates();
+  list.splice(i,1);
+  saveTemplateList(list);
+  renderTplList();
+}
+function openTplManager(){
+  renderTplList();
+  qs('tplModal').style.display='flex';
+}
+
+/* ─── DENTAL CHART ─── */
+let _dentalMarked=new Set();
+function openDentalChart(){
+  _dentalMarked=new Set();
+  try{
+    const saved=JSON.parse(localStorage.getItem('sd-dental')||'[]');
+    saved.forEach(n=>_dentalMarked.add(n));
+  }catch(e){}
+  renderDentalChart();
+  qs('dentalModal').style.display='flex';
+}
+function renderDentalChart(){
+  const el=qs('dentalChartBody');
+  const quads=[
+    {label:'Upper Right',nums:[18,17,16,15,14,13,12,11]},
+    {label:'Upper Left',nums:[21,22,23,24,25,26,27,28]},
+    {label:'Lower Left',nums:[31,32,33,34,35,36,37,38]},
+    {label:'Lower Right',nums:[48,47,46,45,44,43,42,41]}
+  ];
+  let html='<div class="tooth-legend">'+
+    '<div class="tooth-legend-item"><div class="tooth-legend-swatch" style="background:var(--teal)"></div> Affected</div>'+
+    '<div class="tooth-legend-item"><div class="tooth-legend-swatch"></div> Healthy</div>'+
+    '</div>';
+  quads.forEach(q=>{
+    html+='<div class="dental-section"><div class="dental-section-title">'+q.label+'</div><div class="dental-grid">';
+    q.nums.forEach(n=>{
+      const isMarked=_dentalMarked.has(n);
+      html+='<div class="tooth'+(isMarked?' marked':'')+'" onclick="toggleTooth('+n+')" title="Tooth #'+n+'">'+n+'</div>';
+    });
+    html+='</div></div>';
+  });
+  el.innerHTML=html;
+}
+function toggleTooth(n){
+  if(_dentalMarked.has(n))_dentalMarked.delete(n);else _dentalMarked.add(n);
+  localStorage.setItem('sd-dental',JSON.stringify([..._dentalMarked]));
+  renderDentalChart();
+}
+function clearDentalChart(){
+  _dentalMarked.clear();
+  localStorage.setItem('sd-dental','[]');
+  renderDentalChart();
+}
+
+/* ─── PDF GENERATION ─── */
+function genPDF(){
+  const name=qs('pName').value.trim()||'Patient';
+  const rxno=qs('rxNo').textContent;
+  document.title=rxno+' — '+name+' — Sai Dental';
+  const el=qs('rxTab');
+  const opt={
+    margin:8,
+    filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:2,useCORS:true,letterRendering:true},
+    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+  };
+  if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
+  html2pdf().set(opt).from(el).save();
+  showToast('PDF generated: '+rxno);
+}
+
+/* ─── SHARE ─── */
+function shareRx(){
+  const name=qs('pName').value.trim();
+  if(!name){showToast('Enter patient name first','err');return;}
+  const rxno=qs('rxNo').textContent;
+  const text='🦷 *Sai Dental Clinic*\nRx: '+rxno+'\nPatient: '+name+'\nDate: '+new Date().toLocaleDateString('en-IN')+'\n\nPrescription saved in system.';
+  const url='https://wa.me/918122835737?text='+encodeURIComponent(text);
+  window.open(url,'_blank');
+  showToast('WhatsApp share opened');
+}
+
+/* ─── DASHBOARD ─── */
+function renderDash(){
+  const all=_histCache||[];
+  const totalRx=all.length;
+  const totalPat=new Set(all.map(r=>r.patientName)).size;
+  const totalRev=all.reduce((s,r)=>s+(r.grand||0),0);
+  const now=new Date();
+  const thisMonth=all.filter(r=>{
+    const d=r.dateISO?new Date(r.dateISO):null;
+    return d&&d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  });
+  const today=all.filter(r=>{
+    const d=r.dateISO?new Date(r.dateISO):null;
+    return d&&d.toDateString()===now.toDateString();
+  });
+  const avg=totalRx?Math.round(totalRev/totalRx):0;
+  qs('dashTotalRx').textContent=totalRx;
+  qs('dashTotalPat').textContent=totalPat;
+  qs('dashRevenue').textContent='₹'+totalRev;
+  qs('dashMonthRx').textContent=thisMonth.length;
+  qs('dashTodayRx').textContent=today.length;
+  qs('dashAvgAmt').textContent='₹'+avg;
+  /* DX breakdown */
+  const dxMap={};
+  all.forEach(r=>{const d=r.patientDx||'Other';dxMap[d]=(dxMap[d]||0)+1;});
+  const dxSorted=Object.entries(dxMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  qs('dashDxList').innerHTML=dxSorted.length?dxSorted.map(([dx,cnt])=>
+    '<div class="dx-item"><span class="dx-name">'+dx+'</span><span class="dx-count">'+cnt+'</span></div>'
+  ).join(''):'<div class="empty-state"><p>No data yet</p></div>';
+  /* Simple bar chart - last 7 days */
+  const days=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(now);
+    d.setDate(d.getDate()-i);
+    const lbl=d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    const cnt=all.filter(r=>{
+      const rd=r.dateISO?new Date(r.dateISO):null;
+      return rd&&rd.toDateString()===d.toDateString();
+    }).length;
+    days.push({lbl,cnt});
+  }
+  const max=Math.max(...days.map(d=>d.cnt),1);
+  qs('dashChart').innerHTML=days.map(d=>
+    '<div style="display:flex;flex-direction:column;align-items:center">'+
+    '<div class="dash-bar" style="height:'+Math.max(4,(d.cnt/max)*100)+'px" title="'+d.cnt+' Rx"></div>'+
+    '<div class="dash-bar-lbl">'+d.lbl+'</div></div>'
+  ).join('');
+}
+
+/* ─── APPOINTMENTS ─── */
+let _curAptWeek=0;
+function setCurAptWeek(){_curAptWeek=0;}
+function aptWeek(dir){_curAptWeek+=dir;renderApts();}
+function getApts(){
+  try{return JSON.parse(localStorage.getItem('sd-apts')||'[]');}catch{return [];}
+}
+function saveApts(list){
+  localStorage.setItem('sd-apts',JSON.stringify(list));
+}
+function showAptForm(data){
+  const f=qs('aptFormModal');
+  qs('aptFormTitle').textContent=data?'Edit Appointment':'New Appointment';
+  qs('aptName').value=data?.patientName||'';
+  qs('aptContact').value=data?.contact||'';
+  qs('aptDate').value=data?.date||new Date().toISOString().slice(0,10);
+  qs('aptTime').value=data?.time||'10:00';
+  qs('aptPurpose').value=data?.purpose||'';
+  qs('aptNotes').value=data?.notes||'';
+  populateDoctorSelect();
+  if(data?.doctor!=null)qs('aptDoctor').value=data.doctor;
+  qs('aptFormModal').dataset.editId=data?.id||'';
+  f.style.display='flex';
+}
+function saveApt(){
+  const name=qs('aptName').value.trim();
+  const date=qs('aptDate').value;
+  if(!name||!date){showToast('Enter patient name and date','err');return;}
+  const editId=qs('aptFormModal').dataset.editId;
+  const list=getApts();
+  const entry={id:editId||'apt_'+Date.now(),patientName:name,contact:qs('aptContact').value,date,time:qs('aptTime').value,
+    purpose:qs('aptPurpose').value,doctor:qs('aptDoctor').value,notes:qs('aptNotes').value,createdAt:new Date().toISOString()};
+  if(editId){const idx=list.findIndex(a=>a.id===editId);if(idx>=0)list[idx]=entry;else list.push(entry);}
+  else list.push(entry);
+  list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
+  saveApts(list);
+  closeModal(null,'aptFormModal');
+  renderApts();
+  showToast(editId?'Appointment updated':'Appointment saved');
+}
+function deleteApt(id){
+  if(!confirm('Delete this appointment?'))return;
+  const list=getApts().filter(a=>a.id!==id);
+  saveApts(list);
+  renderApts();
+  showToast('Appointment deleted');
+}
+function renderApts(){
+  const list=getApts();
+  const dateFilter=qs('aptDateFilter')?.value||'';
+  const now=new Date();
+  const todayStr=now.toISOString().slice(0,10);
+  if(!dateFilter){qs('aptDateFilter').value=todayStr;}
+  const filterDate=dateFilter||todayStr;
+  const startOfWeek=new Date(now);
+  startOfWeek.setDate(now.getDate()+(_curAptWeek*7)-now.getDay());
+  const endOfWeek=new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate()+6);
+  const weekLabel='Week of '+startOfWeek.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  qs('aptWeekLabel').textContent=weekLabel;
+  const filtered=list.filter(a=>{
+    if(!a.date)return false;
+    const d=new Date(a.date);
+    return d>=new Date(startOfWeek.toDateString())&&d<=new Date(endOfWeek.toDateString());
+  });
+  const todayApts=list.filter(a=>a.date===todayStr).length;
+  qs('aptToday').textContent='Today: '+todayApts+' appointment(s)';
+  const el=qs('aptList');
+  if(!filtered.length){
+    el.innerHTML='<div class="apt-empty">No appointments this week</div>';
+    return;
+  }
+  el.innerHTML=filtered.map(a=>{
+    const isToday=a.date===todayStr;
+    return '<div class="apt-item" style="'+(isToday?'border-color:var(--teal-m);background:var(--teal-l)':'')+'">'+
+      '<div class="apt-time">'+(a.time||'—')+'</div>'+
+      '<div><div class="apt-info-name">'+a.patientName+(isToday?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
+      '<div class="apt-info-sub">'+(a.purpose||'—')+(a.contact?' · '+a.contact:'')+'</div></div>'+
+      '<div class="apt-actions">'+
+      '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
+      '<button class="apt-del" onclick="deleteApt(\''+a.id+'\')" title="Delete">🗑️</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+/* ─── INVENTORY ─── */
+function getInv(){
+  try{return JSON.parse(localStorage.getItem('sd-inv')||'[]');}catch{return [];}
+}
+function saveInv(list){
+  localStorage.setItem('sd-inv',JSON.stringify(list));
+}
+function showInvForm(data){
+  const f=qs('invFormModal');
+  qs('invFormTitle').textContent=data?'Edit Stock':'Add Stock';
+  qs('invName').value=data?.name||'';
+  qs('invQty').value=data?.qty||'';
+  qs('invAlert').value=data?.alert||10;
+  qs('invUnit').value=data?.unit||'Tablets';
+  qs('invPrice').value=data?.price||'';
+  /* Populate datalist from MEDS */
+  const dl=qs('invMedsList');
+  dl.innerHTML=MEDS.map(m=>'<option value="'+m.name+'">').join('');
+  qs('invFormModal').dataset.editId=data?.id||'';
+  f.style.display='flex';
+}
+function saveInvItem(){
+  const name=qs('invName').value.trim();
+  const qty=parseInt(qs('invQty').value)||0;
+  if(!name){showToast('Enter medicine name','err');return;}
+  const editId=qs('invFormModal').dataset.editId;
+  const list=getInv();
+  const entry={id:editId||'inv_'+Date.now(),name,qty,alert:parseInt(qs('invAlert').value)||10,unit:qs('invUnit').value,price:parseFloat(qs('invPrice').value)||0};
+  if(editId){const idx=list.findIndex(a=>a.id===editId);if(idx>=0)list[idx]=entry;else list.push(entry);}
+  else list.push(entry);
+  saveInv(list);
+  closeModal(null,'invFormModal');
+  renderInv();
+  showToast(editId?'Stock updated':'Stock added');
+}
+function deleteInv(id){
+  if(!confirm('Remove this item from inventory?'))return;
+  const list=getInv().filter(a=>a.id!==id);
+  saveInv(list);
+  renderInv();
+  showToast('Item removed');
+}
+function adjustInvQty(id,delta){
+  const list=getInv();
+  const item=list.find(a=>a.id===id);
+  if(!item)return;
+  item.qty=Math.max(0,(item.qty||0)+delta);
+  saveInv(list);
+  renderInv();
+}
+function renderInv(){
+  const list=getInv();
+  const search=(qs('invSearch')?.value||'').toLowerCase();
+  const filter=qs('invFilter')?.value||'all';
+  qs('invCount').textContent=list.length+' item(s)';
+  const low=list.filter(i=>i.qty<=i.alert).length;
+  const out=list.filter(i=>!i.qty).length;
+  qs('invLowCount').textContent=low?'⚠️ '+low+' low, '+out+' out of stock':'';
+  let filtered=list.filter(i=>{
+    if(filter==='low'&&i.qty>i.alert)return false;
+    if(filter==='out'&&i.qty>0)return false;
+    if(search&&!i.name.toLowerCase().includes(search)&&!i.unit.toLowerCase().includes(search))return false;
+    return true;
+  });
+  const el=qs('invList');
+  if(!filtered.length){
+    el.innerHTML='<div class="inv-empty">'+(list.length?'No items match your filter':'No inventory yet. Add your first stock item.')+'</div>';
+    return;
+  }
+  el.innerHTML=filtered.map(i=>{
+    const status=i.qty<=0?'out':i.qty<=i.alert?'low':'ok';
+    return '<div class="inv-item">'+
+      '<div><div class="inv-name">'+i.name+'</div></div>'+
+      '<div class="inv-qty '+status+'">'+(i.qty||0)+'</div>'+
+      '<div class="inv-unit">'+i.unit+'</div>'+
+      '<div class="inv-actions">'+
+      '<button onclick="adjustInvQty(\''+i.id+'\',1)" title="+1">➕</button>'+
+      '<button onclick="adjustInvQty(\''+i.id+'\',-1)" title="-1" '+(i.qty<=0?'disabled':'')+' style="'+(i.qty<=0?'opacity:0.3':'')+'">➖</button>'+
+      '<button onclick="showInvForm('+JSON.stringify(i).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
+      '<button class="inv-del" onclick="deleteInv(\''+i.id+'\')" title="Delete">🗑️</button>'+
+      '</div></div>';
+  }).join('');
+}
+
 /* ═══ INIT ═══ */
 waitFB(()=>{
   window._fb.onAuthStateChanged(window._auth, async user=>{
@@ -530,6 +1081,12 @@ waitFB(()=>{
         qs('rxNo').textContent='RX-'+String(c+1).padStart(4,'0');
       }catch(e){}
       await loadHist();
+      restoreDraft();
+      populateDoctorSelect();
+
+      /* Set today's date for appointment filter */
+      const aptDate=qs('aptDateFilter');
+      if(aptDate)aptDate.valueAsDate=new Date();
 
       /* Register service worker for PWA */
       if('serviceWorker' in navigator){

@@ -249,6 +249,7 @@
           <button class="btn-add" onclick="loadTemplate('composite')">Composite Filling</button>
           <button class="btn-add" onclick="loadTemplate('rootcanal')">Root Canal</button>
           <button class="btn-add" onclick="loadTemplate('crown')">Crown & Bridge</button>
+          <button class="btn-clr" onclick="openTplManager()" style="margin-left:4px;font-size:12px;padding:6px 10px">📋 My Templates</button>
         </div>
         <span class="med-count" id="medCount" style="margin-left:auto">0 item(s)</span>
       </div>
@@ -327,6 +328,7 @@
         <button class="btn-clr" onclick="clearAll()">Clear</button>
         <button class="btn-print" onclick="repeatPreviousRx()">🔁 Repeat Last</button>
         <button class="btn-clr" onclick="shareRx()">📱 Share</button>
+        <button class="btn-clr" onclick="openDentalChart()">🦷 Chart</button>
         <button class="btn-clr" onclick="toggleDark()" id="darkBtn">🌙 Dark</button>
       </div>
     </div>
@@ -465,7 +467,7 @@
       </div>
       <div class="card-body">
         <div class="apt-toolbar">
-          <input type="text" id="invSearch" placeholder="🔍 Search medicine…" onchange="renderInv()" style="max-width:260px"/>
+          <input type="text" id="invSearch" placeholder="🔍 Search medicine…" oninput="renderInv()" style="max-width:260px"/>
           <select id="invFilter" onchange="renderInv()" style="max-width:160px">
             <option value="all">All Items</option>
             <option value="low">Low Stock Only</option>
