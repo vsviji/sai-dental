@@ -72,10 +72,10 @@ let _currentRole = 'admin'; /* default: admin (backward compat) */
 async function getUserRole(email) {
   if (!email) return 'admin';
   try {
-    const snap = await window._fb.getDocs(window._fb.collection(window._db, 'users'));
-    const userDoc = snap.docs.find(d => d.id === email);
-    if (userDoc) return userDoc.data().role || 'staff';
-  } catch (e) { console.warn('Could not fetch role, defaulting to admin'); }
+    const docRef = window._fb.doc(window._fb.collection(window._db, 'users'), email);
+    const snap = await window._fb.getDoc(docRef);
+    if (snap.exists()) return snap.data().role || 'staff';
+  } catch (e) { console.warn('Could not fetch role for', email, '- defaulting to admin'); }
   return 'admin';
 }
 

@@ -9,7 +9,7 @@ import { getAuth, signInWithEmailAndPassword,
          onAuthStateChanged, signOut }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, collection, doc, setDoc,
-         getDocs, deleteDoc, query, orderBy,
+         getDocs, getDoc, deleteDoc, query, orderBy,
          enableIndexedDbPersistence, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -38,8 +38,8 @@ enableIndexedDbPersistence(db).catch(err => {
 /* Expose to global scope so app.js (classic script) can access */
 window._auth = auth;
 window._db   = db;
-window._fb   = {
+window._fb = {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
-  collection, doc, setDoc, getDocs, deleteDoc,
+  collection, doc, setDoc, getDocs, getDoc, deleteDoc,
   query, orderBy, serverTimestamp
 };
