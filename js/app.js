@@ -622,10 +622,14 @@ function toggleDark(){
 /* ─── MULTI-DOCTOR SUPPORT ─── */
 const DOCTORS = [
   {name:'Dr. S. K. Srinivas',deg:'BDS, FDS (Endodontics)',reg:'TNDC-31721'},
-  {name:'Dr. S. K. Srinivas',deg:'BDS, FDS',reg:'TNDC-31721'}
+  {name:'Dr. Arun',deg:'Orthodontist',reg:''},
+  {name:'Dr. Pugazh',deg:'Periodontist (Laser Gum Surgery)',reg:''},
+  {name:'Dr. Vigneshwari',deg:'Oral & Maxillofacial Surgeon (Wisdom Tooth Removal)',reg:''},
+  {name:'Dr. Patrick',deg:'Dental Implants Specialist (Full Mouth Implants)',reg:''}
 ];
 function getDoctors(){
-  try{return JSON.parse(localStorage.getItem('sd-doctors')||'[]');}catch{return DOCTORS;}
+  try{const s=JSON.parse(localStorage.getItem('sd-doctors')||'null');if(s&&s.length)return s;}catch{}
+  return DOCTORS;
 }
 function saveDoctors(list){
   localStorage.setItem('sd-doctors',JSON.stringify(list.length?list:DOCTORS));
@@ -634,7 +638,7 @@ function populateDoctorSelect(){
   const sel=qs('aptDoctor');
   if(!sel)return;
   const docs=getDoctors();
-  sel.innerHTML=docs.map((d,i)=>`<option value="${i}">${d.name}</option>`).join('');
+  sel.innerHTML=docs.map((d,i)=>`<option value="${i}">${d.name}${d.deg?' — '+d.deg:''}</option>`).join('');
 }
 /* Expose doctors for HTML */
 window.getDoctors=getDoctors;
