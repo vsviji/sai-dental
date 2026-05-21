@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sai Dental Clinic — Prescription System</title>
+
+<!-- PWA Meta -->
+<meta name="theme-color" content="#0F6E56"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Sai Dental"/>
+<meta name="description" content="Prescription Management System — Sai Dental Clinic, Mayiladuthurai"/>
+
+<!-- PWA Manifest -->
+<link rel="manifest" href="./manifest.json"/>
+
+<!-- Apple Touch Icons (PWA on iOS) -->
+<link rel="apple-touch-icon" href="./icons/icon-192.png"/>
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png"/>
+<link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+
+<!-- Stylesheet -->
+<link rel="stylesheet" href="./css/style.css"/>
+
+<!-- Firebase (ES module — must load before app.js) -->
+<script type="module" src="./js/firebase-init.js"></script>
+</head>
+<body>
+
+<!-- ═══════ LOGIN ═══════ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">
+      <!-- Replace src with your actual logo image, e.g. ./icons/logo.png -->
+      <img src="./icons/icon-192.png" alt="Sai Dental Logo"
+           onerror="this.style.display='none';this.parentNode.innerHTML='<svg width=\'36\' height=\'36\' viewBox=\'0 0 36 36\'><path d=\'M8 12c0-6 4-9 8-9 2.5 0 4 1.8 4.5 3.5.5-1.7 2-3.5 4.5-3.5 4 0 8 3 8 9 0 8-3.5 14-6 18-1.2 2.2-2 4-2 4s-.8-1.8-2-4C20.5 26 17 20 17 20s-2.5 4.5-5 8.5c-1.2 2.2-2 4-2 4s-.8-1.8-2-4C5.5 25 8 19 8 12z\' fill=\'%23fff\'\/><\/svg>'"/>
+    </div>
+    <div class="login-title">Sai Dental Clinic</div>
+    <div class="login-sub">Sign in to access the prescription system</div>
+    <div class="login-fld">
+      <label class="login-lbl">Email</label>
+      <input type="email" id="loginEmail" placeholder="doctor@saidental.com" autocomplete="email"/>
+    </div>
+    <div class="login-fld">
+      <label class="login-lbl">Password</label>
+      <input type="password" id="loginPwd" placeholder="••••••••" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In</button>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-note">
+      ⚡ Works offline — prescriptions saved locally<br>
+      and synced to Firebase when connection returns
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ MAIN APP ═══════ -->
+<div class="app" id="appMain" style="display:none">
+
+  <!-- PWA Install Banner -->
+  <div class="pwa-banner" id="pwaBanner">
+    📲 <strong>Install app</strong> — add Sai Dental to your home screen for offline access
+    <button class="btn-pwa-install" onclick="installPWA()">Install</button>
+    <button class="btn-pwa-dismiss" onclick="dismissPWA()" title="Dismiss">✕</button>
+  </div>
+
+  <div class="offline-banner" id="offlineBanner">
+    ⚡ You are offline. New prescriptions will be saved locally and auto-synced when you reconnect.
+  </div>
+
+  <!-- Sync bar -->
+  <div class="sync-bar">
+    <div class="sync-dot" id="syncDot"></div>
+    <span id="syncMsg">Connecting…</span>
+    <div class="sync-stats" id="syncStats" style="display:none">
+      <div class="sync-stat">💾 <strong id="statCount">0</strong> prescriptions</div>
+      <div class="sync-stat">👤 <strong id="statPats">0</strong> patients</div>
+      <div class="sync-stat">📅 Last: <strong id="statLast">—</strong></div>
+    </div>
+    <div style="margin-left:auto">
+      <div class="user-pill">
+        <div class="user-avatar" id="userAvatar">D</div>
+        <span id="userEmail" style="font-size:12px;color:var(--muted)"></span>
+        <button class="btn-logout" onclick="doLogout()">Sign out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top nav -->
+  <div class="topnav">
+    <div class="logo-row">
+      <div class="logo-svg">
+        <!-- Replace with your actual logo image -->
+        <img src="./icons/icon-192.png" alt="Sai Dental"
+             onerror="this.style.display='none';this.parentNode.innerHTML='<svg width=\'26\' height=\'26\' viewBox=\'0 0 26 26\'><path d=\'M6 9c0-4 2.5-6.5 5-6.5 1.7 0 2.8 1.2 3 2.5.2-1.3 1.3-2.5 3-2.5 2.5 0 5 2.5 5 6.5 0 5.5-2.2 9.5-4 12.5-.8 1.5-1 2.5-1 2.5s-.2-1-1-2.5c-1.8-3-4-7-4-7s-2.2 4-4 7c-.8 1.5-1 2.5-1 2.5s-.2-1-1-2.5C8.2 18.5 6 14.5 6 9z\' fill=\'%23fff\'\/><\/svg>'"/>
+      </div>
+      <div>
+        <div class="brand">Sai Dental Clinic</div>
+        <div class="brand-sub">Prescription Management System</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" onclick="sw('rx',this)">New Prescription</button>
+      <button class="tab" onclick="sw('hist',this)">History <span class="hbadge" id="hcnt">0</span></button>
+      <button class="tab" onclick="sw('dash',this)">Dashboard</button>
+      <button class="tab" onclick="sw('apt',this)">Appointments</button>
+      <button class="tab" onclick="sw('inv',this)">Inventory</button>
+    </div>
+  </div>
+
+  <!-- ══ RX TAB ══ -->
+  <div id="rxTab">
+
+    <!-- Clinic Header -->
+    <div class="clinic-card">
+      <div class="clinic-top">
+        <div class="clinic-logo-wrap">
+          <!-- Replace with your actual clinic logo -->
+          <img src="./icons/icon-192.png" alt="Sai Dental Logo"
+               onerror="this.style.display='none';this.parentNode.innerHTML='<svg width=\'34\' height=\'34\' viewBox=\'0 0 34 34\'><path d=\'M7 11c0-5 3.2-8 6.5-8 2 0 3.5 1.5 4 3 .5-1.5 2-3 4-3C24.8 3 28 6 28 11c0 6.5-2.5 11.5-5 15.5-1 1.8-1.5 3.5-1.5 3.5s-.5-1.7-1.5-3.5C17.5 22.5 15 18 15 18s-2.5 4.5-5 8.5c-1 1.8-1.5 3.5-1.5 3.5S8 28.3 7 26.5C4.5 22.5 7 17.5 7 11z\' fill=\'%23fff\' opacity=\'.95\'\/><\/svg>'"/>
+        </div>
+        <div>
+          <div class="clinic-title">SAI DENTAL CLINIC</div>
+          <div class="clinic-tagline">Complete Dental Care &nbsp;·&nbsp; Your Smile, Our Mission &nbsp;·&nbsp; saidentalmayiladuthurai.com</div>
+        </div>
+      </div>
+      <div class="clinic-meta-strip">
+        <div class="meta-cell">
+          <div class="mlbl">Address</div>
+          <div class="mval">Kenikarai, Thiruvarur Main Road, Mayiladuthurai - 609001<br>Needur Branch: Near Indian Overseas Bank, Main Road, Needur - 609203</div>
+        </div>
+        <div class="meta-cell">
+          <div class="mlbl">Contact</div>
+          <div class="mval">+91 8122835737<br>saisri.dentalcare@gmail.com</div>
+        </div>
+        <div class="meta-cell">
+          <div class="mlbl">Details</div>
+          <div class="mval"><span id="todayDate"></span><br>Rx No: <span id="rxNo">RX-0001</span></div>
+        </div>
+      </div>
+      <div class="doc-strip">
+        <div>
+          <div class="doc-name">Dr. S. K. Srinivas</div>
+          <div class="doc-deg">BDS, FDS (Endodontics) &nbsp;|&nbsp; Reg No: TNDC-31721 &nbsp;|&nbsp; Indira Gandhi Institute of Dental Science, Pondicherry &nbsp;|&nbsp; Senior Internship (Special training @TMC)</div>
+        </div>
+        <div class="rx-emblem">Rx</div>
+      </div>
+    </div>
+
+    <!-- Patient Details -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="4.5" r="2.5" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M1.5 12c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Patient Details</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--teal);cursor:pointer" onclick="togglePatSearch()">🔍 Search existing patient</span>
+      </div>
+      <div class="card-body">
+        <div class="pat-search-wrap" id="patSearchWrap" style="display:none;margin-bottom:14px">
+          <input type="text" id="patSearchInput" placeholder="Type patient name or phone number…" oninput="searchPatients(this.value)" autocomplete="off"/>
+          <div class="pat-dropdown" id="patDropdown"></div>
+        </div>
+        <div class="pgrid">
+          <div class="fld">
+            <label class="flbl">Patient Name *</label>
+            <input id="pName" type="text" placeholder="Full name"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Age</label>
+            <input id="pAge" type="number" placeholder="Years" min="1" max="120"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Gender</label>
+            <select id="pGender">
+              <option value="">Select</option>
+              <option>Male</option><option>Female</option><option>Other</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label class="flbl">Contact No.</label>
+            <input id="pContact" type="text" placeholder="+91 XXXXX XXXXX"/>
+          </div>
+          <div class="fld" style="grid-column:span 2">
+            <label class="flbl">Diagnosis / Chief Complaint</label>
+            <select id="pDx">
+              <option value="">Select diagnosis</option>
+              <option>Tooth Extraction</option>
+              <option>Root Canal Treatment (RCT)</option>
+              <option>Dental Caries</option>
+              <option>Periodontal Disease</option>
+              <option>Dental Abscess</option>
+              <option>Acute Pulpitis</option>
+              <option>Chronic Pulpitis</option>
+              <option>Gingivitis</option>
+              <option>Impacted Wisdom Tooth</option>
+              <option>Dental Implant Post-op</option>
+              <option>Scaling & Polishing</option>
+              <option>Apicoectomy</option>
+              <option>Teeth Whitening Post-care</option>
+              <option>Orthodontic Treatment</option>
+              <option>Dry Socket (Alveolar Osteitis)</option>
+              <option>Oral Ulcer / Aphthous Stomatitis</option>
+              <option>TMJ Disorder</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label class="flbl">Allergies</label>
+            <input id="pAllergy" type="text" placeholder="e.g., Penicillin / None"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Blood Pressure</label>
+            <input id="pBP" type="text" placeholder="e.g., 120/80"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Ref. Doctor</label>
+            <input id="pRef" type="text" placeholder="Referring doctor"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prescription Table -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1.5" y="1.5" width="11" height="11" rx="2" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M4 5h6M4 7.5h6M4 10h4" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Prescription — Medicines</span>
+        <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-left:20px">
+          <button class="btn-add" onclick="loadTemplate('rct')">RCT</button>
+          <button class="btn-add" onclick="loadTemplate('extraction')">Extraction</button>
+          <button class="btn-add" onclick="loadTemplate('scaling')">Scaling</button>
+          <button class="btn-add" onclick="loadTemplate('composite')">Composite Filling</button>
+          <button class="btn-add" onclick="loadTemplate('rootcanal')">Root Canal</button>
+          <button class="btn-add" onclick="loadTemplate('crown')">Crown & Bridge</button>
+        </div>
+        <span class="med-count" id="medCount" style="margin-left:auto">0 item(s)</span>
+      </div>
+      <div class="tbl-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th style="width:19%">Medicine Name</th>
+              <th style="width:9%">Dosage</th>
+              <th style="width:11%">Frequency</th>
+              <th style="width:10%">Duration</th>
+              <th style="width:7%">Qty</th>
+              <th style="width:9%">Rate (₹)</th>
+              <th style="width:9%">Amount (₹)</th>
+              <th style="width:13%">Instructions</th>
+              <th style="width:32px"></th>
+            </tr>
+          </thead>
+          <tbody id="rxBody"></tbody>
+        </table>
+      </div>
+      <div class="tbl-foot">
+        <button class="btn-add" onclick="addRow({})">+ Add Medicine</button>
+        <span id="subTotal" style="font-size:13px;font-weight:500;color:var(--teal-d);margin-left:auto"></span>
+      </div>
+    </div>
+
+    <!-- Notes & Billing -->
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="2" y="2" width="10" height="2" rx="1" fill="#0F6E56"/>
+            <rect x="2" y="6" width="10" height="2" rx="1" fill="#0F6E56"/>
+            <rect x="2" y="10" width="6" height="2" rx="1" fill="#0F6E56"/>
+          </svg>
+        </div>
+        <span class="card-title">Notes & Billing Summary</span>
+      </div>
+      <div class="billing-grid">
+        <div class="notes-area">
+          <label class="flbl">Doctor's Notes / Post-care Instructions</label>
+          <textarea id="notes" placeholder="e.g., Avoid hot food for 24 hrs. Rinse with warm salt water twice daily…"></textarea>
+          <div style="margin-top:14px">
+            <label class="flbl" style="margin-bottom:6px;display:block">Next Visit / Follow-up</label>
+            <input id="followup" type="text" placeholder="e.g., After 5 days / 15 June 2026"/>
+          </div>
+        </div>
+        <div>
+          <div class="bill-box">
+            <div class="bill-row subtotal-row">
+              <span class="bill-lbl">Subtotal (medicines)</span>
+              <span class="bill-val" id="bSub">₹0.00</span>
+            </div>
+            <div class="bill-grand">
+              <span class="grand-lbl">Grand Total</span>
+              <span class="grand-val" id="bGrand">₹0</span>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;color:var(--hint);line-height:1.6;padding:0 2px">
+            ⌨️ Ctrl+S to save &nbsp;·&nbsp; 🖨️ Print hides all controls
+          </div>
+        </div>
+      </div>
+      <div class="action-bar">
+        <button class="btn-save" id="btnSave" onclick="saveRx()">
+          <span class="si">💾</span>
+          <div class="spinner"></div>
+          Save Prescription
+        </button>
+        <button class="btn-print" onclick="printRx()">🖨️ Print</button>
+        <button class="btn-print" onclick="genPDF()">📄 PDF</button>
+        <button class="btn-export" onclick="exportAll()">📤 Export JSON</button>
+        <button class="btn-clr" onclick="importJSON()" title="Import JSON backup">📥 Import</button>
+        <button class="btn-clr" onclick="clearAll()">Clear</button>
+        <button class="btn-print" onclick="repeatPreviousRx()">🔁 Repeat Last</button>
+        <button class="btn-clr" onclick="shareRx()">📱 Share</button>
+        <button class="btn-clr" onclick="toggleDark()" id="darkBtn">🌙 Dark</button>
+      </div>
+    </div>
+
+  </div><!-- /rxTab -->
+
+  <!-- ══ HISTORY TAB ══ -->
+  <div id="histTab" style="display:none">
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M7 4v3l2 1.5" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Saved Prescriptions</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="histSubtitle"></span>
+      </div>
+      <div class="card-body">
+        <div class="hist-toolbar">
+          <input class="hist-search" type="text" id="histSearch" placeholder="🔍 Search by name, Rx no, diagnosis…" oninput="filterHist()"/>
+          <select class="hist-filter" id="histFilterDx" onchange="filterHist()">
+            <option value="">All Diagnoses</option>
+            <option>Tooth Extraction</option>
+            <option>Root Canal Treatment (RCT)</option>
+            <option>Dental Caries</option>
+            <option>Periodontal Disease</option>
+            <option>Dental Abscess</option>
+            <option>Acute Pulpitis</option>
+            <option>Gingivitis</option>
+            <option>Other</option>
+          </select>
+          <select class="hist-sort" id="histSort" onchange="filterHist()">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="name">Patient Name A-Z</option>
+            <option value="amount">Amount High-Low</option>
+          </select>
+          <button class="btn-export" style="padding:8px 14px;font-size:12px" onclick="exportAll()">📤 Export</button>
+        </div>
+        <div id="histList"></div>
+        <div class="pagination" id="pagination"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD TAB -->
+  <div id="dashTab" style="display:none">
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="5.5" height="5.5" rx="1" stroke="#0F6E56" stroke-width="1.3"/>
+            <rect x="7.5" y="1" width="5.5" height="3.5" rx="1" stroke="#0F6E56" stroke-width="1.3"/>
+            <rect x="1" y="7.5" width="5.5" height="5.5" rx="1" stroke="#0F6E56" stroke-width="1.3"/>
+            <rect x="7.5" y="5.5" width="5.5" height="7.5" rx="1" stroke="#0F6E56" stroke-width="1.3"/>
+          </svg>
+        </div>
+        <span class="card-title">Dashboard</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted)">Clinic overview</span>
+      </div>
+      <div class="card-body">
+        <div class="dash-grid">
+          <div class="dash-stat"><div class="dash-stat-val" id="dashTotalRx">0</div><div class="dash-stat-lbl">Total Prescriptions</div></div>
+          <div class="dash-stat"><div class="dash-stat-val" id="dashTotalPat">0</div><div class="dash-stat-lbl">Total Patients</div></div>
+          <div class="dash-stat"><div class="dash-stat-val" id="dashRevenue">₹0</div><div class="dash-stat-lbl">Total Revenue</div></div>
+          <div class="dash-stat"><div class="dash-stat-val" id="dashMonthRx">0</div><div class="dash-stat-lbl">This Month</div></div>
+          <div class="dash-stat"><div class="dash-stat-val" id="dashTodayRx">0</div><div class="dash-stat-lbl">Today</div></div>
+          <div class="dash-stat"><div class="dash-stat-val" id="dashAvgAmt">₹0</div><div class="dash-stat-lbl">Avg per Rx</div></div>
+        </div>
+        <div class="dash-chart" id="dashChart"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5.5" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M7 4v3l2 1.5" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Common Diagnoses</span>
+      </div>
+      <div class="card-body" id="dashDxList"></div>
+    </div>
+  </div>
+
+  <!-- APPOINTMENTS TAB -->
+  <div id="aptTab" style="display:none">
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Appointments</span>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted)" id="aptToday">Today: —</span>
+          <button class="btn-add" onclick="showAptForm()">+ New Appointment</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="apt-toolbar">
+          <input type="date" id="aptDateFilter" onchange="renderApts()"/>
+          <button class="btn-add" onclick="document.getElementById('aptDateFilter').valueAsDate=new Date();renderApts()">Today</button>
+          <div class="apt-nav">
+            <button class="btn-clr" onclick="aptWeek(-1)">‹ Prev</button>
+            <span id="aptWeekLabel" style="font-size:13px;font-weight:500;color:var(--teal-d)">This Week</span>
+            <button class="btn-clr" onclick="aptWeek(1)">Next ›</button>
+          </div>
+        </div>
+        <div id="aptList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY TAB -->
+  <div id="invTab" style="display:none">
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1.5" y="1.5" width="11" height="11" rx="1.5" stroke="#0F6E56" stroke-width="1.3"/>
+            <path d="M4.5 4.5h5M4.5 7h5M4.5 9.5h3" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="card-title">Medicine Inventory</span>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted)" id="invCount">0 items</span>
+          <span style="font-size:12px;color:var(--red)" id="invLowCount"></span>
+          <button class="btn-add" onclick="showInvForm()">+ Add Stock</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="apt-toolbar">
+          <input type="text" id="invSearch" placeholder="🔍 Search medicine…" onchange="renderInv()" style="max-width:260px"/>
+          <select id="invFilter" onchange="renderInv()" style="max-width:160px">
+            <option value="all">All Items</option>
+            <option value="low">Low Stock Only</option>
+            <option value="out">Out of Stock</option>
+          </select>
+        </div>
+        <div id="invList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEMPLATE MANAGER MODAL -->
+  <div class="modal-overlay" id="tplModal" style="display:none" onclick="closeModal(event,'tplModal')">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span class="modal-title">Custom Templates</span>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <button class="btn-add" onclick="openTplManager()" style="font-size:11px;padding:5px 12px">Manage Templates</button>
+          <button class="modal-close" onclick="closeModal(null,'tplModal')">✕</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <input type="text" id="tplNameInput" placeholder="Template name (e.g., Implant Post-op)" style="flex:1;min-width:200px"/>
+          <button class="btn-add" onclick="saveCustomTemplate()">Save Current Rx as Template</button>
+        </div>
+        <div id="tplList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PATIENT PROFILE MODAL -->
+  <div class="modal-overlay" id="patProfileModal" style="display:none" onclick="closeModal(event,'patProfileModal')">
+    <div class="modal-card modal-card-wide" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span class="modal-title" id="patProfileTitle">Patient Profile</span>
+        <button class="modal-close" onclick="closeModal(null,'patProfileModal')">✕</button>
+      </div>
+      <div class="modal-body" id="patProfileBody"></div>
+    </div>
+  </div>
+
+  <!-- DENTAL CHART MODAL -->
+  <div class="modal-overlay" id="dentalModal" style="display:none" onclick="closeModal(event,'dentalModal')">
+    <div class="modal-card modal-card-wide" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span class="card-title">Dental Chart</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:10px">Click a tooth to mark as affected</span>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn-clr" onclick="clearDentalChart()">Clear</button>
+          <button class="btn-add" onclick="closeModal(null,'dentalModal')">Done</button>
+        </div>
+      </div>
+      <div class="modal-body" id="dentalChartBody"></div>
+    </div>
+  </div>
+
+  <!-- APPOINTMENT FORM MODAL -->
+  <div class="modal-overlay" id="aptFormModal" style="display:none" onclick="closeModal(event,'aptFormModal')">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span class="modal-title" id="aptFormTitle">New Appointment</span>
+        <button class="modal-close" onclick="closeModal(null,'aptFormModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="apt-form-grid">
+          <div class="fld">
+            <label class="flbl">Patient Name *</label>
+            <input type="text" id="aptName" placeholder="Full name"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Contact</label>
+            <input type="text" id="aptContact" placeholder="Phone number"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Date *</label>
+            <input type="date" id="aptDate"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Time</label>
+            <input type="time" id="aptTime"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Purpose</label>
+            <select id="aptPurpose">
+              <option value="">Select</option>
+              <option>Consultation</option>
+              <option>Follow-up</option>
+              <option>RCT</option>
+              <option>Extraction</option>
+              <option>Scaling</option>
+              <option>Crown/Bridge</option>
+              <option>Filling</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label class="flbl">Doctor</label>
+            <select id="aptDoctor"></select>
+          </div>
+          <div class="fld" style="grid-column:span 2">
+            <label class="flbl">Notes</label>
+            <textarea id="aptNotes" placeholder="Optional notes…" style="min-height:50px;resize:vertical"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn-save" onclick="saveApt()">Save Appointment</button>
+          <button class="btn-clr" onclick="closeModal(null,'aptFormModal')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY FORM MODAL -->
+  <div class="modal-overlay" id="invFormModal" style="display:none" onclick="closeModal(event,'invFormModal')">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <span class="modal-title" id="invFormTitle">Add Stock</span>
+        <button class="modal-close" onclick="closeModal(null,'invFormModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="apt-form-grid">
+          <div class="fld" style="grid-column:span 2">
+            <label class="flbl">Medicine Name *</label>
+            <input type="text" id="invName" placeholder="e.g., Amoxicillin 500mg" list="invMedsList"/>
+            <datalist id="invMedsList"></datalist>
+          </div>
+          <div class="fld">
+            <label class="flbl">Stock Quantity *</label>
+            <input type="number" id="invQty" min="0" placeholder="Tablets/Pieces"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Low Stock Alert At</label>
+            <input type="number" id="invAlert" min="1" value="10" placeholder="Alert when below"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Unit</label>
+            <select id="invUnit">
+              <option>Tablets</option>
+              <option>Bottles</option>
+              <option>Boxes</option>
+              <option>Pieces</option>
+              <option>Injection</option>
+            </select>
+          </div>
+          <div class="fld">
+            <label class="flbl">Price per Unit (₹)</label>
+            <input type="number" id="invPrice" min="0" step="0.5" placeholder="Cost price"/>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px">
+          <button class="btn-save" onclick="saveInvItem()">Save</button>
+          <button class="btn-clr" onclick="closeModal(null,'invFormModal')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+<div class="toast" id="toast"></div>
+
+<!-- html2pdf for PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<!-- App Script (classic script — loads after Firebase module) -->
+<script src="./js/app.js" defer></script>
+</body>
+</html>
