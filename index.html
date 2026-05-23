@@ -8,6 +8,7 @@
 <!-- PWA Meta -->
 <meta name="theme-color" content="#0F6E56"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Sai Dental"/>
 <meta name="description" content="Prescription Management System — Sai Dental Clinic, Mayiladuthurai"/>
@@ -44,17 +45,18 @@
     </div>
     <div class="login-title">Sai Dental Clinic</div>
     <div class="login-sub">Sign in to access the prescription system</div>
-    <div class="login-fld">
-      <label class="login-lbl">Email</label>
-      <input type="email" id="loginEmail" placeholder="doctor@saidental.com" autocomplete="email"/>
-    </div>
-    <div class="login-fld">
-      <label class="login-lbl">Password</label>
-      <input type="password" id="loginPwd" placeholder="••••••••" autocomplete="current-password"
-             onkeydown="if(event.key==='Enter')doLogin()"/>
-    </div>
-    <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In</button>
-    <div class="login-err" id="loginErr"></div>
+    <form onsubmit="doLogin();return false">
+      <div class="login-fld">
+        <label class="login-lbl">Email</label>
+        <input type="email" id="loginEmail" placeholder="doctor@saidental.com" autocomplete="email"/>
+      </div>
+      <div class="login-fld">
+        <label class="login-lbl">Password</label>
+        <input type="password" id="loginPwd" placeholder="••••••••" autocomplete="current-password"/>
+      </div>
+      <button class="login-btn" id="loginBtn" type="submit">Sign In</button>
+      <div class="login-err" id="loginErr"></div>
+    </form>
     <div class="login-note">
       ⚡ Works offline — prescriptions saved locally<br>
       and synced to Firebase when connection returns

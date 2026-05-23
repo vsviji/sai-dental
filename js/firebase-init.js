@@ -8,9 +8,9 @@ import { initializeApp }
 import { getAuth, signInWithEmailAndPassword,
          onAuthStateChanged, signOut }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, doc, setDoc,
+import { initializeFirestore, collection, doc, setDoc,
          getDocs, getDoc, deleteDoc, query, orderBy,
-         enableIndexedDbPersistence, serverTimestamp }
+         serverTimestamp, persistentLocalCache, persistentSingleTabManager }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -25,14 +25,10 @@ const firebaseConfig = {
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
-
-enableIndexedDbPersistence(db).catch(err => {
-  if (err.code === 'failed-precondition') {
-    console.warn('Multiple tabs open — offline persistence active in first tab only.');
-  } else if (err.code === 'unimplemented') {
-    console.warn('Browser does not support offline persistence.');
-  }
+const db   = initializeFirestore(app, {
+  cache: persistentLocalCache({
+    tabManager: persistentSingleTabManager()
+  })
 });
 
 /* Expose to global scope so app.js (classic script) can access */
