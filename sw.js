@@ -3,7 +3,7 @@
    sw.js  (PWA offline support)
 ═══════════════════════════════════════════ */
 
-const CACHE_NAME = 'sai-dental-v4';
+const CACHE_NAME = 'sai-dental-v6';
 
 /* Files to cache for offline use */
 const PRECACHE = [
@@ -40,6 +40,9 @@ self.addEventListener('activate', event => {
 
 /* Fetch: network-first for Firebase/API, cache-first for assets */
 self.addEventListener('fetch', event => {
+  /* Skip non-http(s) requests (chrome-extension, data:, etc.) */
+  if (!event.request.url.startsWith('http')) return;
+
   const url = new URL(event.request.url);
 
   /* Always go network-first for Firebase requests */

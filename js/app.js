@@ -34,8 +34,9 @@ function doLogout(){
 }
 
 /* ═══ FIRESTORE HELPERS ═══ */
-const RX_COL   = () => window._fb.collection(window._db,'prescriptions');
+const RX_COL   = () => window._rxCol();
 const SETT_COL = () => window._fb.collection(window._db,'settings');
+const FUP_COL  = () => window._fupCol();
 
 async function getAllRx(){
   const snap = await window._fb.getDocs(
@@ -61,9 +62,19 @@ async function setSetting(key,value){
   await window._fb.setDoc(window._fb.doc(SETT_COL(),key),{value});
 }
 async function nextRxNo(){
-  const n = ((await getSetting('rxCounter'))||0)+1;
-  await setSetting('rxCounter',n);
-  return 'RX-'+String(n).padStart(4,'0');
+  try{
+    const n = ((await getSetting('rxCounter'))||0)+1;
+    await setSetting('rxCounter',n);
+    return 'RX-'+String(n).padStart(4,'0');
+  }catch{
+    /* Fallback: derive next number from history */
+    let max=0;
+    _histCache.forEach(r=>{
+      const m=(r.rxno||'').match(/RX-(\d+)/i);
+      if(m)max=Math.max(max,parseInt(m[1],10));
+    });
+    return 'RX-'+String(max+1).padStart(4,'0');
+  }
 }
 
 /* ═══ ROLE-BASED ACCESS ═══ */
@@ -136,6 +147,26 @@ const MEDS=[
 const FREQS=["Once daily","Twice daily","Thrice daily","Four times daily","Every 6 hours","Every 8 hours","Every 12 hours","As needed (SOS)","Bedtime only","Before meals","After meals","With meals"];
 const DURS=["1 day","2 days","3 days","4 days","5 days","7 days","10 days","14 days","21 days","Until finished"];
 const INSTS=["After food","Before food","With warm water","With milk","At bedtime","Rinse & spit","Apply on affected area","Gargle & spit","Avoid alcohol","Avoid spicy food","Chew before swallowing","Swallow whole"];
+
+/* ─── FOLLOW-UP HELPERS ─── */
+function calcFollowupDays(str){
+  if(!str)return null;
+  const s=str.toLowerCase();
+  const md=s.match(/(\d+)\s*days?/);
+  if(md)return parseInt(md[1]);
+  if(s.match(/(\d+)\s*week/)){const w=s.match(/(\d+)/);return w?parseInt(w[1])*7:7;}
+  if(s.match(/(\d+)\s*month/)){const mo=s.match(/(\d+)/);return mo?parseInt(mo[1])*30:30;}
+  if(s.includes('until')||s.includes('finished'))return null;
+  return null;
+}
+function calcFollowupIso(followupStr,fromIso){
+  const days=calcFollowupDays(followupStr);
+  if(!days)return null;
+  const d=fromIso?new Date(fromIso):new Date();
+  d.setDate(d.getDate()+days);
+  return d.toISOString().slice(0,10);
+}
+function todayIso(){return new Date().toISOString().slice(0,10)}
 
 /* ═══ UI STATE ═══ */
 let rows=[], rid=0, _histCache=[], histPage=1;
@@ -303,6 +334,9 @@ async function saveRx(){
       id,rxno,
       date:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
       dateISO:new Date().toISOString(),
+      followupDate:calcFollowupIso(qs('followup').value)||'',
+      followupStatus:qs('followup').value?'pending':'',
+      followupNotes:[],
       patientName:   qs('pName').value,
       patientAge:    qs('pAge').value,
       patientGender: qs('pGender').value,
@@ -314,11 +348,21 @@ async function saveRx(){
       medicines:     rows.map(r=>({...r})),
       notes:         qs('notes').value,
       followup:      qs('followup').value,
-      grand:         Math.round(grand)
+      grand:         Math.round(grand),
+      paid:          0,
+      paymentStatus: 'pending'
     };
-    await putRx(rx);
+    try{
+      await putRx(rx);
+    }catch(e1){
+      /* try without payment fields (staff might not have permission) */
+      delete rx.paid;delete rx.paymentStatus;
+      await putRx(rx);
+    }
     _histCache.unshift(rx);
     updateStats();
+    _payRxId=rx.id;
+    updateBillPay(rx);
     const counter=await getSetting('rxCounter')||0;
     qs('rxNo').textContent='RX-'+String(counter+1).padStart(4,'0');
     showToast('✓ '+rxno+' saved'+(navigator.onLine?' to Firebase':' offline — will sync when online'));
@@ -331,7 +375,7 @@ async function saveRx(){
 /* ─── HISTORY ─── */
 async function loadHist(){
   try{_histCache=await getAllRx();}catch(e){_histCache=[];}
-  filterHist();updateStats();
+  filterHist();updateStats();applyRoleUI();
 }
 function filterHist(){
   const q=(qs('histSearch')?.value||'').toLowerCase();
@@ -357,24 +401,14 @@ function renderHistPage(list){
     el.innerHTML='<div class="empty-state"><p>No prescriptions found.<br>Create and save your first prescription.</p></div>';
     pg.innerHTML='';return;
   }
-  const isS = isStaff();
   el.innerHTML=slice.map(r=>`
-    <div class="hist-item" style="${isS?'cursor:default':''}">
-      ${isS ? `
-      <span class="hi-amt">₹${r.grand}</span>
-      <div class="hi-name">${r.patientName||'—'}
-        <span class="hi-badge">${r.rxno||''}</span>
-        <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
-      </div>
-      <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
-      <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
-      ` : `
+    <div class="hist-item">
       <div onclick="loadRx('${r.id}')" style="cursor:pointer;flex:1">
-      <button class="btn-del-hist" onclick="event.stopPropagation();deleteRx('${r.id}')">✕</button>
-      <span class="hi-amt">₹${r.grand}</span>
-      <div class="hi-name">${r.patientName||'—'}
+      ${!isStaff()?'<button class="btn-del-hist" onclick="event.stopPropagation();deleteRx(\''+r.id+'\')">✕</button>':''}
+      <div class="hi-name">${r.patientName||'—'} <span class="hi-amt">₹${r.grand}</span>
         <span class="hi-badge">${r.rxno||''}</span>
         <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
+        ${payStatusBadge(r)}
       </div>
       <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
       <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
@@ -383,7 +417,6 @@ function renderHistPage(list){
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
-      `}
     </div>`).join('');
   if(pages<=1){pg.innerHTML='';return;}
   let h=`<button class="pg-btn" onclick="goPg(${histPage-1})" ${histPage===1?'disabled':''}>‹ Prev</button>`;
@@ -398,8 +431,23 @@ function renderHistPage(list){
 }
 function goPg(p){histPage=p;filterHist();window.scrollTo(0,0);}
 
+function setFormReadOnly(ro){
+  const ids=['pName','pAge','pGender','pContact','pBP','pDx','pAllergy','pRef','notes','followup'];
+  ids.forEach(id=>{const el=qs(id);if(el)el.disabled=ro;});
+  qs('btnSave').style.display=ro?'none':'';
+  qs('addRowBtn').style.display=ro?'none':'';
+  qs('tplBtns').style.display=ro?'none':'';
+  qs('clearBtn').style.display=ro?'none':'';
+  const banner=qs('readOnlyBanner');
+  if(banner)banner.style.display=ro?'block':'none';
+  /* Payment buttons: hide Pay for read-only, keep Receipt */
+  const payActions=qs('billPaySection')?.querySelector('.bill-pay-actions');
+  if(payActions)payActions.style.display=ro?'none':'';
+  /* Disable all medicine row selects/inputs */
+  document.querySelectorAll('#rxBody select,#rxBody input').forEach(el=>el.disabled=ro);
+}
 function loadRx(id){
-  if(isStaff()){showToast('View only — cannot edit history','warn');return;}
+  const isS=isStaff();
   const rx=_histCache.find(r=>r.id===id);if(!rx)return;
   qs('pName').value   =rx.patientName   ||'';
   qs('pAge').value    =rx.patientAge    ||'';
@@ -412,7 +460,38 @@ function loadRx(id){
   qs('notes').value   =rx.notes         ||'';
   qs('followup').value=rx.followup      ||'';
   rows=[];rid=0;(rx.medicines||[]).forEach(m=>addRow(m));
+  setFormReadOnly(isS);
+  _payRxId=rx.id;
+  updateBillPay(rx);
   sw('rx',document.querySelectorAll('.tab')[0]);
+  /* Show follow-up notes if any (from prescription + separate collection) */
+  const fupEl=qs('loadedFupNotes');
+  if(fupEl){
+    (async()=>{
+      let fupNotes=rx.followupNotes||[];
+      let fupStatus=rx.followupStatus||'pending';
+      try{
+        const snap=await window._fb.getDoc(window._fb.doc(FUP_COL(),rx.id));
+        if(snap.exists()){
+          const d=snap.data();
+          fupNotes=[...fupNotes,...(d.notes||[])];
+          fupStatus=d.status||fupStatus;
+        }
+      }catch(e){}
+      if(fupNotes?.length){
+        fupEl.innerHTML='<div class="fup-loaded"><strong>Follow-up notes:</strong>'+
+          fupNotes.map(n=>'<div class="fup-loaded-note"><span class="fup-note-by">'+n.by+'</span> '+n.note+' <span class="fup-note-at">'+new Date(n.at).toLocaleDateString('en-IN')+'</span></div>').join('')+
+          '<span class="fup-status-tag">'+(
+            fupStatus==='done'?'✅ Done':
+            fupStatus==='contacted'?'📞 Contacted':
+            '🟡 Pending'
+          )+'</span></div>';
+        fupEl.style.display='block';
+      }else{
+        fupEl.style.display='none';
+      }
+    })();
+  }
   showToast('Loaded: '+rx.rxno);
 }
 
@@ -464,7 +543,7 @@ async function exportAll(){
 
 /* ─── TABS ─── */
 function sw(tab,btn){
-  const tabs=['rx','hist','dash','apt','inv'];
+  const tabs=['rx','hist','dash','apt','inv','fup'];
   tabs.forEach(t=>{
     const el=qs(t+'Tab');
     if(el)el.style.display=t===tab?'block':'none';
@@ -473,8 +552,9 @@ function sw(tab,btn){
   btn.classList.add('on');
   if(tab==='hist')loadHist();
   if(tab==='dash')renderDash();
-  if(tab==='apt'){setCurAptWeek();renderApts();}
+  if(tab==='apt'){todayApt();}
   if(tab==='inv')renderInv();
+  if(tab==='fup')renderFollowups();
 }
 function printRx(){
   document.title=qs('rxNo').textContent+' — '+(qs('pName').value||'Patient')+' — Sai Dental';
@@ -482,15 +562,27 @@ function printRx(){
 }
 async function clearAll(){
   if(!confirm('Clear all fields and start fresh?'))return;
+  newRxForm();
+}
+function newRxForm(){
   rows=[];rid=0;renderRows();
   ['pName','pAge','pContact','pBP','pRef','notes','followup'].forEach(id=>qs(id).value='');
   ['pGender','pDx'].forEach(id=>qs(id).value='');
   qs('pAllergy').value='';
-  const c=await getSetting('rxCounter')||0;
-  qs('rxNo').textContent='RX-'+String(c+1).padStart(4,'0');
+  _payRxId=null;
+  const sec=qs('billPaySection');
+  if(sec)sec.style.display='none';
+  setFormReadOnly(false);
+  const rno=qs('rxNo');
+  if(rno)rno.textContent='';
+  (async()=>{
+    const c=await getSetting('rxCounter')||0;
+    qs('rxNo').textContent='RX-'+String(c+1).padStart(4,'0');
+  })();
 }
 async function repeatPreviousRx(){
   if(!_histCache.length){showToast('No previous prescriptions found','warn');return;}
+  newRxForm();
   const last=_histCache[0];
   qs('pName').value   =last.patientName   ||'';
   qs('pAge').value    =last.patientAge    ||'';
@@ -504,6 +596,10 @@ async function repeatPreviousRx(){
   qs('followup').value=last.followup      ||'';
   rows=[];rid=0;(last.medicines||[]).forEach(m=>addRow(m));
   showToast('Previous Rx loaded: '+last.rxno);
+}
+function newRx(){
+  newRxForm();
+  showToast('New prescription ready');
 }
 
 /* ─── PWA INSTALL ─── */
@@ -585,8 +681,8 @@ function applyRoleUI() {
   if (existing) existing.remove();
 
   if (isS) {
-    /* Hide admin-only tabs: Dashboard, Appointments, Inventory */
-    ['dash', 'apt', 'inv'].forEach(t => {
+    /* Hide admin-only tabs: Dashboard, Inventory */
+    ['dash', 'inv'].forEach(t => {
       const btn = document.querySelector(`.tab[onclick*="'${t}'"]`);
       if (btn) btn.style.display = 'none';
     });
@@ -600,7 +696,13 @@ function applyRoleUI() {
     style.id = 'sd-role-style';
     style.textContent = '.btn-del-hist{display:none!important}';
     document.head.appendChild(style);
+  } else {
+    /* Show the follow-ups tab for admin/doctor too */
+    const fupBtn = document.querySelector(`.tab[onclick*="'fup'"]`);
+    if (fupBtn) fupBtn.style.display = '';
   }
+  /* Update follow-up badge asynchronously */
+  updateFupBadge();
 }
 
 /* ─── MODAL HELPERS ─── */
@@ -665,8 +767,10 @@ function restoreDraft(){
     const raw=localStorage.getItem('sd-draft');
     if(!raw)return;
     const d=JSON.parse(raw);
-    if(!d.pName&&!d.rows?.length)return;
-    if(!confirm('You have an unsaved draft. Restore it?')){localStorage.removeItem('sd-draft');return;}
+    /* Skip prompt if only an empty default row (no patient name, no medicine chosen) */
+    const hasData=d.pName||(d.rows||[]).some(r=>r.name);
+    if(!hasData){localStorage.removeItem('sd-draft');return;}
+    /* Auto-restore draft silently */
     qs('pName').value=d.pName||'';
     qs('pAge').value=d.pAge||'';
     qs('pGender').value=d.pGender||'';
@@ -678,7 +782,7 @@ function restoreDraft(){
     qs('notes').value=d.notes||'';
     qs('followup').value=d.followup||'';
     if(d.rows?.length){rows=[];rid=0;d.rows.forEach(m=>addRow(m));}
-    showToast('Draft restored');
+    localStorage.removeItem('sd-draft');
   }catch(e){localStorage.removeItem('sd-draft');}
 }
 /* Auto-save every 10s when on rx tab */
@@ -710,11 +814,98 @@ async function handleImport(ev){
   }catch(e){showToast('Import failed: '+e.message,'err');}
 }
 
+/* ─── PAYMENT ─── */
+let _payRxId=null;
+function showPayModal(){
+  const rx=_histCache.find(r=>r.id===_payRxId);
+  if(!rx){showToast('Save the prescription first','err');return;}
+  const paid=rx.paid||0;
+  const balance=rx.grand-paid;
+  qs('payModalTitle').textContent='💰 Payment — '+rx.rxno;
+  qs('payGrand').textContent='₹'+rx.grand;
+  qs('payAlready').textContent='₹'+paid;
+  qs('payBalance').textContent='₹'+Math.max(0,balance);
+  qs('payAmount').value=balance>0?balance:'';
+  qs('payAmount').max=balance;
+  qs('payModal').dataset.rxId=rx.id;
+  qs('payModal').style.display='flex';
+  setTimeout(()=>qs('payAmount').focus(),200);
+}
+async function recordPayment(){
+  const id=qs('payModal').dataset.rxId;
+  const amount=parseInt(qs('payAmount').value);
+  if(!amount||amount<1){showToast('Enter a valid amount','err');return;}
+  const method=qs('payMethod').value;
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx){showToast('Prescription not found','err');return;}
+  const newPaid=(rx.paid||0)+amount;
+  if(newPaid>rx.grand){showToast('Payment exceeds grand total','err');return;}
+  const status=newPaid>=rx.grand?'paid':newPaid>0?'partial':'pending';
+  try{
+    await window._fb.updateDoc(window._fb.doc(RX_COL(),id),{paid:newPaid,paymentStatus:status});
+    rx.paid=newPaid;rx.paymentStatus=status;
+    closeModal(null,'payModal');
+    updateBillPay(rx);
+    showToast('✅ Payment recorded ('+method+')');
+  }catch(e){showToast('Payment failed: '+e.message,'err');}
+}
+function updateBillPay(rx){
+  const sec=qs('billPaySection');
+  if(!sec)return;
+  if(!rx||!rx.grand){sec.style.display='none';return;}
+  const paid=rx.paid||0;const bal=rx.grand-paid;
+  qs('bPaid').textContent='₹'+paid;
+  qs('bBalance').textContent='₹'+bal;
+  qs('bBalance').style.color=bal>0?'var(--red)':'var(--teal)';
+  sec.style.display='block';
+}
+function payStatusBadge(rx){
+  const s=rx.paymentStatus||'pending';
+  const paid=rx.paid||0;
+  if(paid>=rx.grand&&rx.grand>0)return '<span class="pay-badge pay-paid">✅ Paid</span>';
+  if(paid>0)return '<span class="pay-badge pay-partial">🟡 Partial ₹'+paid+'</span>';
+  return '<span class="pay-badge pay-pending">🔴 Pending</span>';
+}
+function printReceipt(){
+  const rx=_histCache.find(r=>r.id===_payRxId);
+  if(!rx){showToast('Save and load the prescription first','err');return;}
+  const paid=rx.paid||0;const bal=rx.grand-paid;
+  const win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Receipt — '+rx.rxno+'</title>'+
+    '<style>body{font-family:"DM Sans",sans-serif;padding:30px;max-width:400px;margin:0 auto;color:#1a1a1a}'+
+    '.hdr{text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #0F6E56}'+
+    '.hdr h2{margin:0;color:#0F6E56;font-size:18px}.hdr p{margin:4px 0;font-size:12px;color:#6b7280}'+
+    '.info td{padding:4px 8px;font-size:13px}.info td:first-child{color:#6b7280}'+
+    'table{width:100%;border-collapse:collapse;margin:16px 0}'+
+    'th{background:#0F6E56;color:#fff;padding:8px 10px;font-size:12px;text-align:left}'+
+    'td{padding:6px 10px;font-size:12px;border-bottom:1px solid #e5e7eb}'+
+    '.total-row td{font-weight:600;padding:8px 10px}'+
+    '.totals{margin-top:12px;padding-top:12px;border-top:2px solid #0F6E56}'+
+    '.totals div{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}'+
+    '.footer{text-align:center;margin-top:24px;font-size:11px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:14px}'+
+    '@media print{body{padding:20px}}'+
+    '</style></head><body>'+
+    '<div class="hdr"><h2>SAI DENTAL CLINIC</h2><p>Kenikarai, Thiruvarur Main Road, Mayiladuthurai</p><p>+91 8122835737</p></div>'+
+    '<table class="info"><tr><td>Rx No</td><td><strong>'+rx.rxno+'</strong></td></tr>'+
+    '<tr><td>Patient</td><td><strong>'+rx.patientName+'</strong></td></tr>'+
+    '<tr><td>Date</td><td>'+rx.date+'</td></tr></table>'+
+    '<table><tr><th>#</th><th>Medicine</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>'+
+    (rx.medicines||[]).map((m,i)=>'<tr><td>'+(i+1)+'</td><td>'+m.name+'</td><td>'+m.qty+'</td><td>₹'+m.rate+'</td><td>₹'+(m.qty*m.rate)+'</td></tr>').join('')+
+    '</table>'+
+    '<div class="totals"><div><span>Grand Total</span><span>₹'+rx.grand+'</span></div>'+
+    '<div><span>Paid</span><span>₹'+paid+'</span></div>'+
+    '<div style="font-weight:700;color:'+(bal>0?'#E24B4A':'#0F6E56')+'"><span>Balance</span><span>₹'+bal+'</span></div></div>'+
+    '<div class="footer">Thank you — Visit again!<br>Sai Dental Clinic</div>'+
+    '</body></html>');
+  win.document.close();
+  setTimeout(()=>{win.print();win.close();},300);
+}
+
 /* ─── DUPLICATE RX ─── */
 function duplicateRx(id){
   const rx=_histCache.find(r=>r.id===id);
   if(!rx)return;
-  rows=[];rid=0;
+  newRxForm();
   qs('pName').value=rx.patientName||'';
   qs('pAge').value=rx.patientAge||'';
   qs('pGender').value=rx.patientGender||'';
@@ -911,11 +1102,15 @@ function shareRx(){
 }
 
 /* ─── DASHBOARD ─── */
+const DASH_COLORS=['#0F6E56','#1a8a7a','#2d9b8b','#085041','#5DCAA5','#0a5a46','#3aad9a','#0F6E56','#1a8a7a','#2d9b8b'];
+const DASH_BAR_COLORS=['#0F6E56','#1a8a7a','#2d9b8b','#3aad9a','#5DCAA5','#9FE1CB','#0F6E56'];
 function renderDash(){
   const all=_histCache||[];
   const totalRx=all.length;
   const totalPat=new Set(all.map(r=>r.patientName)).size;
-  const totalRev=all.reduce((s,r)=>s+(r.grand||0),0);
+  const calcGrand=r=>r.grand||Math.round((r.medicines||[]).reduce((s,m)=>s+(m.qty||0)*(m.rate||0),0));
+  const totalRev=all.reduce((s,r)=>s+calcGrand(r),0);
+  const totalOutstanding=all.reduce((s,r)=>s+Math.max(0,calcGrand(r)-(r.paid||0)),0);
   const now=new Date();
   const thisMonth=all.filter(r=>{
     const d=r.dateISO?new Date(r.dateISO):null;
@@ -932,37 +1127,103 @@ function renderDash(){
   qs('dashMonthRx').textContent=thisMonth.length;
   qs('dashTodayRx').textContent=today.length;
   qs('dashAvgAmt').textContent='₹'+avg;
-  /* DX breakdown */
+  const outEl=qs('dashOutstanding');
+  if(outEl){outEl.textContent='₹'+totalOutstanding;outEl.style.color=totalOutstanding?'var(--red)':'var(--teal)';}
+
+  /* ── Build last 7 days data ── */
+  const days=[],revDays=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(now);d.setDate(d.getDate()-i);
+    const lbl=d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+    const dayRx=all.filter(r=>{
+      const rd=r.dateISO?new Date(r.dateISO):null;
+      return rd&&rd.toDateString()===d.toDateString();
+    });
+    days.push({lbl,cnt:dayRx.length});
+    revDays.push({lbl,amt:dayRx.reduce((s,r)=>s+calcGrand(r),0)});
+  }
+
+  /* ── Rx count bar chart ── */
+  const rxMax=Math.max(...days.map(d=>d.cnt),1);
+  qs('dashChart').innerHTML=days.map((d,i)=>{
+    const h=Math.max(8,(d.cnt/rxMax)*110);
+    return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end">'+
+      '<div class="dash-bar-val">'+d.cnt+'</div>'+
+      '<div class="dash-bar" style="height:'+h+'px;background:'+DASH_BAR_COLORS[i]+';opacity:'+(0.5+(d.cnt/rxMax)*0.5)+'"></div>'+
+      '<div class="dash-bar-lbl">'+d.lbl+'</div></div>';
+  }).join('');
+
+  /* ── Revenue bar chart ── */
+  const revMax=Math.max(...revDays.map(d=>d.amt),1);
+  const revEl=qs('dashRevChart');
+  if(revEl){
+    revEl.innerHTML=revDays.map((d,i)=>{
+      const h=Math.max(8,(d.amt/revMax)*110);
+      return '<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end">'+
+        '<div class="dash-bar-val">₹'+d.amt+'</div>'+
+        '<div class="dash-bar" style="height:'+h+'px;background:'+DASH_BAR_COLORS[i]+';opacity:0.7"></div>'+
+        '<div class="dash-bar-lbl">'+d.lbl+'</div></div>';
+    }).join('');
+  }
+
+  /* ── DX breakdown with horizontal bars ── */
   const dxMap={};
   all.forEach(r=>{const d=r.patientDx||'Other';dxMap[d]=(dxMap[d]||0)+1;});
   const dxSorted=Object.entries(dxMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  qs('dashDxList').innerHTML=dxSorted.length?dxSorted.map(([dx,cnt])=>
-    '<div class="dx-item"><span class="dx-name">'+dx+'</span><span class="dx-count">'+cnt+'</span></div>'
-  ).join(''):'<div class="empty-state"><p>No data yet</p></div>';
-  /* Simple bar chart - last 7 days */
-  const days=[];
-  for(let i=6;i>=0;i--){
-    const d=new Date(now);
-    d.setDate(d.getDate()-i);
-    const lbl=d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
-    const cnt=all.filter(r=>{
-      const rd=r.dateISO?new Date(r.dateISO):null;
-      return rd&&rd.toDateString()===d.toDateString();
-    }).length;
-    days.push({lbl,cnt});
+  const dxTotal=dxSorted.reduce((s,[,c])=>s+c,0)||1;
+  const dxEl=qs('dashDxList');
+  if(dxEl){
+    dxEl.innerHTML=dxSorted.length?dxSorted.map(([dx,cnt],i)=>{
+      const pct=Math.round(cnt/dxTotal*100);
+      return '<div class="dx-item" style="border-left-color:'+DASH_COLORS[i%DASH_COLORS.length]+'">'+
+        '<div><div class="dx-name">'+dx+'</div>'+
+        '<div class="dx-bar-bg"><div class="dx-bar-fill" style="width:'+pct+'%;background:'+DASH_COLORS[i%DASH_COLORS.length]+'"></div></div></div>'+
+        '<div style="text-align:right"><div class="dx-count">'+cnt+'</div><div style="font-size:10px;color:var(--muted)">'+pct+'%</div></div></div>';
+    }).join(''):'<div class="empty-state"><p>No data yet</p></div>';
   }
-  const max=Math.max(...days.map(d=>d.cnt),1);
-  qs('dashChart').innerHTML=days.map(d=>
-    '<div style="display:flex;flex-direction:column;align-items:center">'+
-    '<div class="dash-bar" style="height:'+Math.max(4,(d.cnt/max)*100)+'px" title="'+d.cnt+' Rx"></div>'+
-    '<div class="dash-bar-lbl">'+d.lbl+'</div></div>'
-  ).join('');
+
+  /* ── Pie chart (canvas) ── */
+  const canvas=qs('dashPieCanvas');
+  const legend=qs('dashPieLegend');
+  if(canvas&&legend){
+    const ctx=canvas.getContext('2d');
+    const cw=canvas.width,ch=canvas.height,cx=cw/2,cy=ch/2,r=Math.min(cx,cy)-8;
+    ctx.clearRect(0,0,cw,ch);
+    legend.innerHTML='';
+    if(dxSorted.length){
+      let total=dxSorted.reduce((s,[,c])=>s+c,0);
+      let startAngle=-Math.PI/2;
+      dxSorted.slice(0,8).forEach(([dx,cnt],i)=>{
+        const sliceAngle=(cnt/total)*Math.PI*2;
+        const color=DASH_COLORS[i%DASH_COLORS.length];
+        ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,startAngle,startAngle+sliceAngle);ctx.closePath();
+        ctx.fillStyle=color;ctx.fill();
+        /* White separator line */
+        ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+        startAngle+=sliceAngle;
+        /* Legend */
+        const leg=document.createElement('div');leg.className='dash-pie-legend-item';
+        leg.innerHTML='<span class="dash-pie-legend-dot" style="background:'+color+'"></span> '+dx+' ('+cnt+')';
+        legend.appendChild(leg);
+      });
+      /* Center hole (donut effect) */
+      ctx.beginPath();ctx.arc(cx,cy,r*.45,0,Math.PI*2);ctx.fillStyle='var(--surf2)';ctx.fill();
+      ctx.fillStyle='var(--ink)';ctx.font='bold 14px "DM Sans",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(total,cx,cy-6);
+      ctx.font='10px "DM Sans",sans-serif';ctx.fillStyle='var(--muted)';ctx.fillText('Total',cx,cy+12);
+    }else{
+      ctx.fillStyle='var(--border)';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='var(--muted)';ctx.font='12px "DM Sans",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText('No data',cx,cy);
+    }
+  }
 }
 
-/* ─── APPOINTMENTS ─── */
-let _curAptWeek=0;
-function setCurAptWeek(){_curAptWeek=0;}
-function aptWeek(dir){_curAptWeek+=dir;renderApts();}
+/* ─── APPOINTMENTS (Calendar) ─── */
+let _aptMonth=new Date().getMonth();
+let _aptYear=new Date().getFullYear();
+let _aptSelDate=dateStr(new Date());
+function dateStr(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getApts(){
   try{return JSON.parse(localStorage.getItem('sd-apts')||'[]');}catch{return [];}
 }
@@ -970,11 +1231,12 @@ function saveApts(list){
   localStorage.setItem('sd-apts',JSON.stringify(list));
 }
 function showAptForm(data){
+  if(data&&isStaff()){showToast('Staff cannot edit appointments','err');return;}
   const f=qs('aptFormModal');
   qs('aptFormTitle').textContent=data?'Edit Appointment':'New Appointment';
   qs('aptName').value=data?.patientName||'';
   qs('aptContact').value=data?.contact||'';
-  qs('aptDate').value=data?.date||new Date().toISOString().slice(0,10);
+  qs('aptDate').value=data?.date||dateStr(new Date());
   qs('aptTime').value=data?.time||'10:00';
   qs('aptPurpose').value=data?.purpose||'';
   qs('aptNotes').value=data?.notes||'';
@@ -984,64 +1246,173 @@ function showAptForm(data){
   f.style.display='flex';
 }
 function saveApt(){
-  const name=qs('aptName').value.trim();
-  const date=qs('aptDate').value;
-  if(!name||!date){showToast('Enter patient name and date','err');return;}
-  const editId=qs('aptFormModal').dataset.editId;
-  const list=getApts();
-  const entry={id:editId||'apt_'+Date.now(),patientName:name,contact:qs('aptContact').value,date,time:qs('aptTime').value,
-    purpose:qs('aptPurpose').value,doctor:qs('aptDoctor').value,notes:qs('aptNotes').value,createdAt:new Date().toISOString()};
-  if(editId){const idx=list.findIndex(a=>a.id===editId);if(idx>=0)list[idx]=entry;else list.push(entry);}
-  else list.push(entry);
-  list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
-  saveApts(list);
-  closeModal(null,'aptFormModal');
-  renderApts();
-  showToast(editId?'Appointment updated':'Appointment saved');
+  try{
+    const name=qs('aptName').value.trim();
+    const date=qs('aptDate').value;
+    if(!name||!date){showToast('Enter patient name and date','err');return;}
+    const editId=qs('aptFormModal').dataset.editId;
+    const list=getApts();
+    const existing=editId?list.find(a=>a.id===editId):null;
+    const entry={id:editId||'apt_'+Date.now(),patientName:name,contact:qs('aptContact').value,date,time:qs('aptTime').value,
+      purpose:qs('aptPurpose').value,doctor:qs('aptDoctor').value,notes:qs('aptNotes').value,
+      status:existing?existing.status:'pending',adminNotes:existing?existing.adminNotes:'',createdAt:new Date().toISOString()};
+    if(editId){const idx=list.findIndex(a=>a.id===editId);if(idx>=0)list[idx]=entry;else list.push(entry);}
+    else list.push(entry);
+    list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
+    saveApts(list);
+    closeModal(null,'aptFormModal');
+    renderApts();
+    showToast(editId?'Appointment updated':'Appointment saved');
+  }catch(e){showToast('Failed to save appointment: '+e.message,'err');}
 }
 function deleteApt(id){
+  if(isStaff()){showToast('Staff cannot delete appointments','err');return;}
   if(!confirm('Delete this appointment?'))return;
   const list=getApts().filter(a=>a.id!==id);
   saveApts(list);
   renderApts();
   showToast('Appointment deleted');
 }
+function aptMonth(dir){
+  _aptMonth+=dir;
+  if(_aptMonth<0){_aptMonth=11;_aptYear--;}
+  if(_aptMonth>11){_aptMonth=0;_aptYear++;}
+  renderApts();
+}
+function todayApt(){
+  const d=new Date();
+  _aptYear=d.getFullYear();_aptMonth=d.getMonth();
+  _aptSelDate=dateStr(d);
+  renderApts();
+}
 function renderApts(){
   const list=getApts();
-  const dateFilter=qs('aptDateFilter')?.value||'';
+  const grid=qs('aptCalGrid');if(!grid)return;
+  const title=qs('aptCalTitle');
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  title.textContent=months[_aptMonth]+' '+_aptYear;
   const now=new Date();
-  const todayStr=now.toISOString().slice(0,10);
-  if(!dateFilter){qs('aptDateFilter').value=todayStr;}
-  const filterDate=dateFilter||todayStr;
-  const startOfWeek=new Date(now);
-  startOfWeek.setDate(now.getDate()+(_curAptWeek*7)-now.getDay());
-  const endOfWeek=new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate()+6);
-  const weekLabel='Week of '+startOfWeek.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
-  qs('aptWeekLabel').textContent=weekLabel;
-  const filtered=list.filter(a=>{
-    if(!a.date)return false;
-    const d=new Date(a.date);
-    return d>=new Date(startOfWeek.toDateString())&&d<=new Date(endOfWeek.toDateString());
-  });
-  const todayApts=list.filter(a=>a.date===todayStr).length;
-  qs('aptToday').textContent='Today: '+todayApts+' appointment(s)';
-  const el=qs('aptList');
-  if(!filtered.length){
-    el.innerHTML='<div class="apt-empty">No appointments this week</div>';
+  const todayStr=dateStr(now);
+  const firstDow=new Date(_aptYear,_aptMonth,1).getDay();
+  const daysInMonth=new Date(_aptYear,_aptMonth+1,0).getDate();
+  const daysInPrev=new Date(_aptYear,_aptMonth,0).getDate();
+  /* Build day->apts map */
+  const dayMap={};
+  list.forEach(a=>{if(a.date){if(!dayMap[a.date])dayMap[a.date]=[];dayMap[a.date].push(a);}});
+  let html='';
+  /* Day-of-week header */
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d=>{html+='<div class="apt-cal-dow">'+d+'</div>';});
+  /* Previous month filler */
+  for(let i=firstDow-1;i>=0;i--){
+    const d=daysInPrev-i;
+    html+='<div class="apt-cal-day other">'+d+'</div>';
+  }
+  /* Current month days */
+  for(let d=1;d<=daysInMonth;d++){
+    const ds=_aptYear+'-'+String(_aptMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const isToday=ds===todayStr;
+    const isSel=ds===_aptSelDate;
+    const dayApts=dayMap[ds];
+    const allDone=dayApts&&dayApts.every(a=>a.status==='done');
+    const cls='apt-cal-day'+(isToday?' today':'')+(isSel?' sel':'');
+    html+='<div class="'+cls+'" onclick="selAptDay(\''+ds+'\')">'+
+      '<span>'+d+'</span>'+
+      (dayApts?'<span class="apt-cal-count">'+dayApts.length+(allDone?' ✅':'')+'</span>':'')+
+      '</div>';
+  }
+  /* Next month filler */
+  const totalCells=firstDow+daysInMonth;
+  const rem=(7-totalCells%7)%7;
+  for(let d=1;d<=rem;d++){
+    html+='<div class="apt-cal-day other">'+d+'</div>';
+  }
+  grid.innerHTML=html;
+  /* Render selected day's appointments */
+  renderDayApts(dayMap[_aptSelDate]||[],todayStr);
+}
+function selAptDay(ds){
+  _aptSelDate=ds;
+  renderApts();
+}
+function renderDayApts(apts,todayStr){
+  const el=qs('aptDayApts');
+  const isS=isStaff();
+  if(!apts.length){
+    el.innerHTML='<div class="apt-cal-empty">No appointments on '+_aptSelDate+'</div>'+
+      '<button class="btn-add" onclick="showAptForm()" style="display:block;margin:8px auto 0">+ Add Appointment</button>';
+    updateAptBadge();
     return;
   }
-  el.innerHTML=filtered.map(a=>{
+  let html='<div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:8px">'+_aptSelDate+' — '+apts.length+' appointment(s)</div>'+
+    '<div class="apt-day-list">';
+  apts.forEach(a=>{
     const isToday=a.date===todayStr;
-    return '<div class="apt-item" style="'+(isToday?'border-color:var(--teal-m);background:var(--teal-l)':'')+'">'+
+    const st=a.status||'pending';
+    html+='<div class="apt-item" style="'+(isToday?'border-color:var(--teal-m);background:var(--teal-l)':'')+'">'+
       '<div class="apt-time">'+(a.time||'—')+'</div>'+
-      '<div><div class="apt-info-name">'+a.patientName+(isToday?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
+      '<div><div class="apt-info-name">'+a.patientName+(
+        (st==='done'?' <span class="apt-status done">✅ Done</span>':' <span class="apt-status pending">🔴 Pending</span>')
+      )+(isToday?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
       '<div class="apt-info-sub">'+(a.purpose||'—')+(a.contact?' · '+a.contact:'')+'</div></div>'+
       '<div class="apt-actions">'+
-      '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
-      '<button class="apt-del" onclick="deleteApt(\''+a.id+'\')" title="Delete">🗑️</button>'+
+      (isS?'':(
+        '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
+        '<button onclick="showAptNoteModal(\''+a.id+'\')" title="Notes">📝</button>'+
+        '<button class="apt-del" onclick="deleteApt(\''+a.id+'\')" title="Delete">🗑️</button>'
+      ))+
       '</div></div>';
-  }).join('');
+  });
+  html+='</div>';
+  el.innerHTML=html;
+  updateAptBadge();
+}
+function showAptNoteModal(id){
+  if(isStaff()){showToast('Staff cannot edit appointments','err');return;}
+  const list=getApts();
+  const a=list.find(x=>x.id===id);
+  if(!a)return;
+  qs('aptNoteModal').dataset.aptId=id;
+  qs('aptNotePatient').textContent=a.patientName+' ('+(a.time||'—')+')';
+  const st=a.status||'pending';
+  qs('aptNoteStatus').innerHTML='<span class="apt-status '+st+'">'+(st==='done'?'✅ Done':'🔴 Pending')+'</span>';
+  qs('aptDoneBtn').textContent=st==='done'?'Mark Pending':'Mark Done';
+  qs('aptNoteText').value=a.adminNotes||'';
+  qs('aptNoteModal').style.display='flex';
+}
+function toggleAptDone(){
+  const id=qs('aptNoteModal').dataset.aptId;
+  if(!id)return;
+  const list=getApts();
+  const a=list.find(x=>x.id===id);
+  if(!a)return;
+  a.status=a.status==='done'?'pending':'done';
+  saveApts(list);
+  const st=a.status;
+  qs('aptNoteStatus').innerHTML='<span class="apt-status '+st+'">'+(st==='done'?'✅ Done':'🔴 Pending')+'</span>';
+  qs('aptDoneBtn').textContent=st==='done'?'Mark Pending':'Mark Done';
+  renderApts();
+  showToast('Appointment '+(st==='done'?'completed':'reopened'));
+}
+function saveAptNote(){
+  const id=qs('aptNoteModal').dataset.aptId;
+  if(!id)return;
+  const list=getApts();
+  const a=list.find(x=>x.id===id);
+  if(!a)return;
+  a.adminNotes=qs('aptNoteText').value.trim();
+  saveApts(list);
+  closeModal(null,'aptNoteModal');
+  renderApts();
+  showToast('Notes saved');
+}
+function updateAptBadge(){
+  const badge=qs('aptBadge');
+  if(!badge)return;
+  const today=dateStr(new Date());
+  const list=getApts();
+  const cnt=list.filter(a=>a.date===today).length;
+  badge.textContent=cnt;
+  badge.style.display=cnt?'inline':'none';
 }
 
 /* ─── INVENTORY ─── */
@@ -1128,6 +1499,177 @@ function renderInv(){
   }).join('');
 }
 
+/* ─── FOLLOW-UPS ─── */
+function getFollowups(){
+  return _histCache.filter(r=>r.followupDate)
+    .map(r=>({...r,overdue:r.followupDate<todayIso()}))
+    .sort((a,b)=>{
+      if(a.overdue&&!b.overdue)return -1;
+      if(!a.overdue&&b.overdue)return 1;
+      return (a.followupDate||'').localeCompare(b.followupDate||'');
+    });
+}
+async function showFupNotification(){
+  try{
+    const snap=await window._fb.getDocs(FUP_COL());
+    const fupMap={};
+    snap.docs.forEach(d=>{fupMap[d.id]=d.data();});
+    const now=todayIso();
+    const due=_histCache.filter(r=>{
+      if(!r.followupDate||r.followupDate>now)return false;
+      const fup=fupMap[r.id];
+      const status=fup?fup.status:(r.followupStatus||'pending');
+      return status!=='done';
+    });
+    /* Also check rescheduled items */
+    for(const [id,fup] of Object.entries(fupMap)){
+      if(fup.followupDate&&fup.followupDate<=now&&fup.status!=='done'&&!_histCache.find(r=>r.id===id&&r.followupDate)){
+        const rx=_histCache.find(r=>r.id===id);
+        if(rx)due.push(rx);
+      }
+    }
+    if(!due.length)return;
+    const body=qs('fupNotifyBody');
+    if(!body)return;
+    body.innerHTML='<div style="margin-bottom:12px;font-size:13px;color:var(--muted)">The following patients need follow-up:</div>'+
+      due.slice(0,10).map(r=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
+        '<div><strong>'+r.patientName+'</strong><br><span style="font-size:11px;color:var(--muted)">'+r.rxno+' · Follow-up: '+r.followupDate+'</span></div>'+
+        '<button class="btn-sm" onclick="closeModal(null,\'fupNotifyModal\');document.querySelector(\'.tab:nth-child(6)\').click()">View</button></div>'
+      ).join('')+
+      (due.length>10?'<div style="text-align:center;padding:8px;font-size:12px;color:var(--muted)">+'+(due.length-10)+' more</div>':'')+
+      '<div style="margin-top:14px;text-align:center">'+
+      '<button class="btn-save" onclick="closeModal(null,\'fupNotifyModal\')">Got it</button></div>';
+    qs('fupNotifyModal').style.display='flex';
+  }catch(e){}
+}
+async function updateFupBadge(){
+  const badge=qs('fupBadge');
+  if(!badge)return;
+  try{
+    let count=0;
+    const snap=await window._fb.getDocs(FUP_COL());
+    const fupMap={};
+    snap.docs.forEach(d=>{fupMap[d.id]=d.data();});
+    const now=todayIso();
+    for(const r of _histCache){
+      if(!r.followupDate)continue;
+      const fup=fupMap[r.id];
+      const status=fup?fup.status:(r.followupStatus||'pending');
+      const fupDate=fup?.followupDate||r.followupDate;
+      if(fupDate&&fupDate<=now&&status!=='done')count++;
+    }
+    /* Also count rescheduled items from followups collection */
+    for(const [id,fup] of Object.entries(fupMap)){
+      if(fup.followupDate&&fup.followupDate<=now&&fup.status!=='done'&&!_histCache.find(r=>r.id===id&&r.followupDate)){
+        count++;
+      }
+    }
+    badge.textContent=count;badge.style.display=count?'':'none';
+  }catch(e){badge.style.display='none';}
+}
+async function renderFollowups(){
+  const el=qs('fupList');
+  let fupMap={};
+  try{
+    const snap=await window._fb.getDocs(FUP_COL());
+    snap.docs.forEach(d=>{fupMap[d.id]=d.data();});
+  }catch(e){}
+  /* Items from prescriptions with followupDate */
+  const rxItems=getFollowups().map(r=>{
+    const fup=fupMap[r.id]||{};
+    const notes=fup.notes||r.followupNotes||[];
+    const status=fup.status||r.followupStatus||'pending';
+    const fupDate=fup.followupDate||r.followupDate;
+    return {...r,_fupNotes:notes,_fupStatus:status,_fupDate:fupDate};
+  });
+  /* Also include items that only exist in followups collection (rescheduled) */
+  for(const [id,fup] of Object.entries(fupMap)){
+    if(fup.followupDate&&!rxItems.find(x=>x.id===id)){
+      const rx=_histCache.find(r=>r.id===id);
+      if(rx)rxItems.push({...rx,_fupNotes:fup.notes||[],_fupStatus:fup.status||'pending',_fupDate:fup.followupDate});
+    }
+  }
+  const now=todayIso();
+  const pending=rxItems.filter(r=>{
+    if(!r._fupDate)return false;
+    if(r._fupStatus!=='done')return true;
+    return r._fupDate<=now;
+  }).map(r=>({...r,overdue:r._fupDate<now})).sort((a,b)=>{
+      if(a.overdue&&!b.overdue)return -1;
+      if(!a.overdue&&b.overdue)return 1;
+      return (a._fupDate||'').localeCompare(b._fupDate||'');
+    });
+  if(!pending.length){
+    el.innerHTML='<div class="fup-empty">No follow-ups pending</div>';
+    qs('fupCount').textContent='0';
+    return;
+  }
+  qs('fupCount').textContent=pending.length;
+  el.innerHTML=pending.map(r=>{
+    const isResched=r._fupStatus==='done';
+    const label=isResched?'🔄 Rescheduled':r.overdue?'🔴 Overdue':'🟡 Pending';
+    return '<div class="fup-item">'+
+      '<div class="fup-info">'+
+      '<div class="fup-name">'+(r.patientName||'—')+' <span class="fup-rxno">'+r.rxno+'</span></div>'+
+      '<div class="fup-sub">Rx: '+r.date+' · Follow-up: '+r._fupDate+'</div>'+
+      (r._fupNotes?.length?'<div class="fup-notes">'+
+        r._fupNotes.slice(-2).map(n=>'<div class="fup-note"><span class="fup-note-by">'+n.by+'</span> '+n.note+' <span class="fup-note-at">'+new Date(n.at).toLocaleDateString('en-IN')+'</span></div>').join('')+
+        '</div>':'')+
+      '</div>'+
+      '<div class="fup-actions">'+
+      '<span class="fup-status">'+label+'</span>'+
+      '<button class="btn-sm" onclick="loadRx(\''+r.id+'\')">👁️ View</button>'+
+      '<button class="btn-sm" onclick="showFupNote(\''+r.id+'\')">📝 Note</button>'+
+      '</div></div>';
+  }).join('');
+}
+async function showFupNote(id){
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx)return;
+  qs('fupNoteModal').dataset.rxId=id;
+  qs('fupNoteTitle').textContent='Follow-up: '+(rx.patientName||'')+' ('+rx.rxno+')';
+  qs('fupNoteText').value='';
+  qs('fupRescheduleChk').checked=false;
+  qs('fupRescheduleDays').style.display='none';
+  qs('fupRescheduleWrap').style.display='none';
+  let curStatus=rx.followupStatus||'pending';
+  try{
+    const snap=await window._fb.getDoc(window._fb.doc(FUP_COL(),id));
+    if(snap.exists())curStatus=snap.data().status||curStatus;
+  }catch(e){}
+  qs('fupNoteStatus').value=curStatus==='done'?'done':'contacted';
+  qs('fupRescheduleWrap').style.display=curStatus==='done'?'block':'none';
+  qs('fupNoteModal').style.display='flex';
+}
+async function saveFupNote(){
+  const id=qs('fupNoteModal').dataset.rxId;
+  const note=qs('fupNoteText').value.trim();
+  const status=qs('fupNoteStatus').value;
+  if(!note&&status!=='done'){showToast('Enter a note or mark as done','err');return;}
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx){showToast('Prescription not found','err');return;}
+  try{
+    const ref=window._fb.doc(FUP_COL(),id);
+    const snap=await window._fb.getDoc(ref);
+    const data=snap.exists()?snap.data():{notes:[],status:'pending'};
+    data.notes.push({by:qs('userEmail').textContent,note:note||'(Marked done)',at:new Date().toISOString()});
+    /* Reschedule? */
+    const resched=qs('fupRescheduleChk').checked;
+    if(resched&&status==='done'){
+      const days=parseInt(qs('fupRescheduleDays').value)||5;
+      const d=new Date();d.setDate(d.getDate()+days);
+      data.followupDate=d.toISOString().slice(0,10);
+      data.status='pending';
+    }else{
+      data.status=status;
+    }
+    await window._fb.setDoc(ref,data);
+    closeModal(null,'fupNoteModal');
+    renderFollowups();
+    showToast('Follow-up updated');
+  }catch(e){showToast('Failed to save: '+e.message,'err');}
+}
+
 /* ═══ INIT ═══ */
 waitFB(()=>{
   window._fb.onAuthStateChanged(window._auth, async user=>{
@@ -1163,12 +1705,11 @@ waitFB(()=>{
         qs('rxNo').textContent='RX-'+String(c+1).padStart(4,'0');
       }catch(e){}
       await loadHist();
+      applyRoleUI(); /* refresh follow-up badge after history loads */
+      if(isStaff())setTimeout(()=>showFupNotification(),500);
       restoreDraft();
       populateDoctorSelect();
-
-      /* Set today's date for appointment filter */
-      const aptDate=qs('aptDateFilter');
-      if(aptDate)aptDate.valueAsDate=new Date();
+      updateAptBadge();
 
       /* Register service worker for PWA */
       if('serviceWorker' in navigator){

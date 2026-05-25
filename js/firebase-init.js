@@ -10,7 +10,8 @@ import { getAuth, signInWithEmailAndPassword,
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { initializeFirestore, collection, doc, setDoc,
          getDocs, getDoc, deleteDoc, query, orderBy,
-         serverTimestamp, persistentLocalCache, persistentSingleTabManager }
+         serverTimestamp, updateDoc,
+         persistentLocalCache, persistentSingleTabManager }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -37,5 +38,8 @@ window._db   = db;
 window._fb = {
   signInWithEmailAndPassword, onAuthStateChanged, signOut,
   collection, doc, setDoc, getDocs, getDoc, deleteDoc,
-  query, orderBy, serverTimestamp
+  query, orderBy, serverTimestamp, updateDoc
 };
+/* Collection helpers */
+window._rxCol   = () => collection(db, 'prescriptions');
+window._fupCol  = () => collection(db, 'followups');
