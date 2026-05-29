@@ -87,7 +87,10 @@
       <div class="sync-stat">👤 <strong id="statPats">0</strong> patients</div>
       <div class="sync-stat">📅 Last: <strong id="statLast">—</strong></div>
     </div>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <button class="notif-bell" id="notifBell" onclick="showNotifModal()" title="Reminders">
+        🔔<span class="notif-count" id="notifCount" style="display:none">0</span>
+      </button>
       <div class="user-pill">
         <div class="user-avatar" id="userAvatar">D</div>
         <span id="userEmail" style="font-size:12px;color:var(--muted)"></span>
@@ -338,7 +341,7 @@
         <button class="btn-save" id="btnSave" onclick="saveRx()">
           <span class="si">💾</span>
           <div class="spinner"></div>
-          Save Prescription
+          <span id="btnSaveLabel">Save Prescription</span>
         </button>
         <button class="btn-print" onclick="printRx()">🖨️ Print</button>
         <button class="btn-print" onclick="genPDF()">📄 PDF</button>
@@ -622,6 +625,57 @@
     </div>
   </div>
 
+  <!-- SHARE MODAL -->
+  <div class="modal-overlay" id="shareModal" style="display:none" onclick="closeModal(event,'shareModal')">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width:420px">
+      <div style="padding:20px 24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <span style="font-size:24px">📤</span>
+          <div>
+            <div style="font-size:16px;font-weight:600;color:var(--ink)">Share Prescription</div>
+            <div style="font-size:12px;color:var(--muted)">Send this prescription to the patient</div>
+          </div>
+          <button class="modal-close" onclick="closeModal(null,'shareModal')" style="margin-left:auto;font-size:20px">✕</button>
+        </div>
+        <div id="shareSummary" style="padding:14px 16px;background:var(--surf2);border:1px solid var(--border);border-radius:12px;margin-bottom:12px"></div>
+        <div id="shareFupSection" style="padding:14px 16px;background:var(--surf2);border:1px solid var(--border);border-radius:12px;margin-bottom:12px;display:none">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:500">
+            <input type="checkbox" id="shareCreateApt" checked style="width:16px;height:16px;accent-color:var(--teal)"/>
+            📅 Create appointment for this follow-up
+          </label>
+          <div id="shareAptPreview" style="font-size:12px;color:var(--muted);margin-top:8px;padding-left:26px"></div>
+        </div>
+        <div style="padding:12px 14px;background:var(--teal-l);border-radius:10px;margin-bottom:16px;display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--teal-d)">
+          <span style="font-size:14px;line-height:1.3">💡</span>
+          <span>The PDF will be generated &amp; shared via WhatsApp. On desktop the PDF is copied to clipboard — just press <strong>Ctrl+V</strong> in the chat.</span>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn-save" onclick="confirmShare()" style="flex:1;justify-content:center">📤 Share Now</button>
+          <button class="btn-clr" onclick="closeModal(null,'shareModal')" style="flex:0">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICATION MODAL -->
+  <div class="modal-overlay" id="notifModal" style="display:none" onclick="closeModal(event,'notifModal')">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width:440px">
+      <div style="padding:20px 24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <span style="font-size:24px">🔔</span>
+          <div>
+            <div style="font-size:16px;font-weight:600;color:var(--ink)">Reminders</div>
+            <div style="font-size:12px;color:var(--muted)">Appointments needing WhatsApp follow-up</div>
+          </div>
+          <button class="modal-close" onclick="closeModal(null,'notifModal')" style="margin-left:auto;font-size:20px">✕</button>
+        </div>
+        <div id="notifList" style="max-height:400px;overflow-y:auto">
+          <div class="empty-state" style="padding:24px"><p>No pending reminders</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- FOLLOW-UP NOTIFICATION POPUP -->
   <div class="modal-overlay" id="fupNotifyModal" style="display:none">
     <div class="modal-card" onclick="event.stopPropagation()" style="max-width:420px">
@@ -806,11 +860,29 @@
   </div>
 
 </div><!-- /app -->
+
+<!-- DELETE CONFIRMATION MODAL -->
+<div class="modal-overlay" id="delConfirmModal" style="display:none" onclick="closeModal(event,'delConfirmModal')">
+  <div class="modal-card" onclick="event.stopPropagation()" style="max-width:360px">
+    <div style="padding:24px">
+      <h3 style="margin:0 0 6px;font-family:'Playfair Display',Georgia,serif;font-size:18px;color:var(--ink)">Delete Prescription?</h3>
+      <div style="width:40px;height:3px;background:var(--red);border-radius:2px;margin-bottom:16px"></div>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin:0 0 4px">This will permanently delete the prescription for:</p>
+      <p style="font-size:14px;font-weight:600;color:var(--ink);margin:0 0 4px" id="delRxName"></p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 20px">Rx No: <strong id="delRxNo" style="color:var(--ink)"></strong></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-clr" onclick="closeModal(null,'delConfirmModal')">Cancel</button>
+        <button class="btn-save" id="confirmDelBtn" style="background:var(--red);border-color:var(--red)" onclick="confirmDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- html2pdf for PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <!-- App Script (classic script — loads after Firebase module) -->
-<script src="./js/app.js?v=20260523" defer></script>
+<script src="./js/app.js?v=20260529" defer></script>
 </body>
 </html>

@@ -6,6 +6,9 @@
 /* ─── WAIT FOR FIREBASE MODULE ─── */
 function waitFB(cb){ window._fb ? cb() : setTimeout(()=>waitFB(cb),80); }
 
+let _editingRxId=null;
+let _deleteRxId=null;
+
 /* ═══ AUTH ═══ */
 function doLogin(){
   const email = document.getElementById('loginEmail').value.trim();
@@ -328,15 +331,23 @@ async function saveRx(){
   btn.disabled=true;btn.classList.add('saving');
   try{
     const grand=rows.reduce((a,r)=>a+(r.qty*r.rate),0);
-    const rxno=await nextRxNo();
-    const id='rx_'+Date.now();
+    let rxno,id,existing;
+    if(_editingRxId){
+      existing=_histCache.find(r=>r.id===_editingRxId);
+      if(!existing){showToast('Original prescription not found','err');btn.disabled=false;btn.classList.remove('saving');return;}
+      rxno=existing.rxno;
+      id=_editingRxId;
+    }else{
+      rxno=await nextRxNo();
+      id='rx_'+Date.now();
+    }
     const rx={
       id,rxno,
       date:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
       dateISO:new Date().toISOString(),
       followupDate:calcFollowupIso(qs('followup').value)||'',
       followupStatus:qs('followup').value?'pending':'',
-      followupNotes:[],
+      followupNotes:existing?.followupNotes||[],
       patientName:   qs('pName').value,
       patientAge:    qs('pAge').value,
       patientGender: qs('pGender').value,
@@ -349,23 +360,32 @@ async function saveRx(){
       notes:         qs('notes').value,
       followup:      qs('followup').value,
       grand:         Math.round(grand),
-      paid:          0,
-      paymentStatus: 'pending'
+      paid:          existing?.paid||0,
+      paymentStatus: existing?.paymentStatus||'pending'
     };
     try{
       await putRx(rx);
     }catch(e1){
-      /* try without payment fields (staff might not have permission) */
       delete rx.paid;delete rx.paymentStatus;
       await putRx(rx);
     }
-    _histCache.unshift(rx);
-    updateStats();
-    _payRxId=rx.id;
-    updateBillPay(rx);
-    const counter=await getSetting('rxCounter')||0;
-    qs('rxNo').textContent='RX-'+String(counter+1).padStart(4,'0');
-    showToast('✓ '+rxno+' saved'+(navigator.onLine?' to Firebase':' offline — will sync when online'));
+    if(_editingRxId){
+      const idx=_histCache.findIndex(r=>r.id===_editingRxId);
+      if(idx>=0)_histCache[idx]=rx;
+      _editingRxId=null;
+      _payRxId=rx.id;
+      updateBillPay(rx);
+      qs('btnSaveLabel').textContent='Save Prescription';
+      showToast('✓ '+rxno+' updated');
+    }else{
+      _histCache.unshift(rx);
+      updateStats();
+      _payRxId=rx.id;
+      updateBillPay(rx);
+      const counter=await getSetting('rxCounter')||0;
+      qs('rxNo').textContent='RX-'+String(counter+1).padStart(4,'0');
+      showToast('✓ '+rxno+' saved'+(navigator.onLine?' to Firebase':' offline — will sync when online'));
+    }
   }catch(e){
     showToast('Save failed: '+e.message,'err');
   }
@@ -403,17 +423,23 @@ function renderHistPage(list){
   }
   el.innerHTML=slice.map(r=>`
     <div class="hist-item">
-      <div onclick="loadRx('${r.id}')" style="cursor:pointer;flex:1">
-      ${!isStaff()?'<button class="btn-del-hist" onclick="event.stopPropagation();deleteRx(\''+r.id+'\')">✕</button>':''}
+      <div onclick="loadRx('${r.id}')" class="hist-main">
       <div class="hi-name">${r.patientName||'—'} <span class="hi-amt">₹${r.grand}</span>
         <span class="hi-badge">${r.rxno||''}</span>
         <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
+      </div>
+      <div class="hi-pay-row">
         ${payStatusBadge(r)}
+        ${!isStaff()?`
+        <span class="hist-hover-actions">
+          <button class="btn-icon-hist btn-edit-hist" onclick="event.stopPropagation();editRx('${r.id}')" title="Edit">✏️</button>
+          <button class="btn-icon-hist btn-del-hist" onclick="event.stopPropagation();showDeleteConfirm('${r.id}')" title="Delete">✕</button>
+        </span>`:''}
       </div>
       <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
       <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
       </div>
-      <div style="display:flex;gap:4px;margin-top:8px;flex-wrap:wrap">
+      <div class="hist-extra-actions">
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
@@ -495,15 +521,68 @@ function loadRx(id){
   showToast('Loaded: '+rx.rxno);
 }
 
-async function deleteRx(id){
+function showDeleteConfirm(id){
   if(isStaff()){showToast('Staff cannot delete prescriptions','err');return;}
-  if(!confirm('Delete this prescription permanently?'))return;
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx)return;
+  _deleteRxId=id;
+  qs('delRxName').textContent=rx.patientName||'Unknown';
+  qs('delRxNo').textContent=rx.rxno||'—';
+  qs('delConfirmModal').style.display='flex';
+}
+
+async function confirmDelete(){
+  const id=_deleteRxId;
+  if(!id)return;
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx){closeModal(null,'delConfirmModal');return;}
+  const btn=qs('confirmDelBtn');
+  btn.disabled=true;btn.textContent='Deleting…';
   try{
     await deleteRxById(id);
+    /* Auto-adjust RX counter when deleting the most recent */
+    const m=(rx.rxno||'').match(/RX-(\d+)/i);
+    if(m){
+      const rxNum=parseInt(m[1],10);
+      try{
+        const c=await getSetting('rxCounter')||0;
+        if(rxNum>=c){await setSetting('rxCounter',Math.max(0,rxNum-1));}
+      }catch(e){/* ignore */}
+    }
     _histCache=_histCache.filter(r=>r.id!==id);
     updateStats();filterHist();
+    closeModal(null,'delConfirmModal');
     showToast('Prescription deleted');
+    /* Refresh displayed next RX number */
+    if(!_editingRxId){
+      getSetting('rxCounter').then(c=>{
+        const rno=qs('rxNo');
+        if(rno)rno.textContent='RX-'+String((c||0)+1).padStart(4,'0');
+      });
+    }
   }catch(e){showToast('Delete failed: '+e.message,'err');}
+  btn.disabled=false;btn.textContent='Delete';
+}
+
+async function deleteRx(id){
+  if(isStaff()){showToast('Staff cannot delete prescriptions','err');return;}
+  showDeleteConfirm(id);
+}
+
+function editRx(id){
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx){showToast('Prescription not found','err');return;}
+  loadRx(id);
+  _editingRxId=id;
+  qs('btnSaveLabel').textContent='💾 Update '+rx.rxno;
+  showToast('Editing '+rx.rxno+' — make changes and click Update');
+}
+function cancelEdit(){
+  if(!_editingRxId)return;
+  _editingRxId=null;
+  qs('btnSaveLabel').textContent='Save Prescription';
+  newRxForm();
+  showToast('Edit cancelled');
 }
 
 function updateStats(){
@@ -561,10 +640,12 @@ function printRx(){
   window.print();
 }
 async function clearAll(){
+  if(_editingRxId){cancelEdit();return;}
   if(!confirm('Clear all fields and start fresh?'))return;
   newRxForm();
 }
 function newRxForm(){
+  if(_editingRxId){_editingRxId=null;qs('btnSaveLabel').textContent='Save Prescription';}
   rows=[];rid=0;renderRows();
   ['pName','pAge','pContact','pBP','pRef','notes','followup'].forEach(id=>qs(id).value='');
   ['pGender','pDx'].forEach(id=>qs(id).value='');
@@ -694,7 +775,7 @@ function applyRoleUI() {
     /* Inject CSS for read-only history */
     const style = document.createElement('style');
     style.id = 'sd-role-style';
-    style.textContent = '.btn-del-hist{display:none!important}';
+    style.textContent = '.btn-del-hist,.btn-edit-hist{display:none!important}';
     document.head.appendChild(style);
   } else {
     /* Show the follow-ups tab for admin/doctor too */
@@ -847,6 +928,7 @@ async function recordPayment(){
     closeModal(null,'payModal');
     updateBillPay(rx);
     showToast('✅ Payment recorded ('+method+')');
+    if(status==='paid')sharePaidPrescriptionPdf(rx);
   }catch(e){showToast('Payment failed: '+e.message,'err');}
 }
 function updateBillPay(rx){
@@ -865,6 +947,48 @@ function payStatusBadge(rx){
   if(paid>=rx.grand&&rx.grand>0)return '<span class="pay-badge pay-paid">✅ Paid</span>';
   if(paid>0)return '<span class="pay-badge pay-partial">🟡 Partial ₹'+paid+'</span>';
   return '<span class="pay-badge pay-pending">🔴 Pending</span>';
+}
+async function sharePaidPrescriptionPdf(rx){
+  const name=rx.patientName||'Patient';
+  const rxno=rx.rxno||'RX-—';
+  const el=qs('rxTab');
+  if(!el)return;
+  if(typeof html2pdf==='undefined'){showToast('PDF library not loaded','warn');return;}
+  const opt={
+    margin:8,
+    filename:rxno+'_'+name.replace(/\s+/g,'_')+'_receipt.pdf',
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:2,useCORS:true,letterRendering:true},
+    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+  };
+  const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  try{
+    const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
+    const phone=rx.patientContact?rx.patientContact.replace(/[^\d]/g,''):'918122835737';
+    const dx=rx.patientDx||'—';
+    const meds=(rx.medicines||[]).map(m=>m.name).join(', ').slice(0,150);
+    const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    const text='🦷 *Sai Dental Clinic*\n✅ *Payment Received*\n\n👤 Patient: '+name+
+      '\n📋 Rx No: '+rxno+
+      '\n🏥 Diagnosis: '+dx+
+      '\n💊 Medicines: '+meds+
+      '\n💰 Amount: ₹'+rx.grand+' | 💵 Paid: ₹'+(rx.paid||0)+
+      '\n📅 Date: '+dateStr+
+      '\n\nPrescription receipt attached. Thank you! 🙏';
+    if(isMobile&&navigator.canShare){
+      const blob=pdf.output('blob');
+      const file=new File([blob],opt.filename,{type:'application/pdf'});
+      await navigator.share({title:'Receipt - '+name,text:text,files:[file]});
+      showToast('✅ Receipt shared');
+    }else{
+      pdf.save(opt.filename);
+      const url='https://wa.me/'+phone+'?text='+encodeURIComponent('🦷 Sai Dental Clinic\n✅ Payment Received\n\nPatient: '+name+'\nRx: '+rxno+'\n\n📄 Receipt PDF has been downloaded — please attach it to this chat.');
+      const w=window.open('','sai_wa_share');if(w)w.location.href=url;
+      showToast('📄 PDF downloaded — drag & drop file into WhatsApp Web chat');
+    }
+  }catch(e){
+    if(e.name!=='AbortError')showToast('Could not share PDF: '+e.message,'err');
+  }
 }
 function printReceipt(){
   const rx=_histCache.find(r=>r.id===_payRxId);
@@ -1095,10 +1219,70 @@ function shareRx(){
   const name=qs('pName').value.trim();
   if(!name){showToast('Enter patient name first','err');return;}
   const rxno=qs('rxNo').textContent;
-  const text='🦷 *Sai Dental Clinic*\nRx: '+rxno+'\nPatient: '+name+'\nDate: '+new Date().toLocaleDateString('en-IN')+'\n\nPrescription saved in system.';
-  const url='https://wa.me/918122835737?text='+encodeURIComponent(text);
-  window.open(url,'_blank');
-  showToast('WhatsApp share opened');
+  const followupText=qs('followup').value.trim();
+  qs('shareSummary').innerHTML=
+    '<div style="font-size:14px;font-weight:600;margin-bottom:2px">'+name+'</div>'+
+    '<div style="font-size:12px;color:var(--muted)">'+rxno+' · '+new Date().toLocaleDateString('en-IN')+'</div>';
+  if(followupText){
+    qs('shareFupSection').style.display='block';
+    qs('shareAptPreview').textContent='📅 '+followupText;
+    qs('shareCreateApt').checked=true;
+  }else{
+    qs('shareFupSection').style.display='none';
+  }
+  qs('shareModal').style.display='flex';
+}
+
+async function confirmShare(){
+  const name=qs('pName').value.trim();
+  const rxno=qs('rxNo').textContent;
+  const followupText=qs('followup').value.trim();
+  closeModal(null,'shareModal');
+  showToast('Generating PDF…');
+  if(followupText&&qs('shareCreateApt').checked){
+    createApptFromFollowup(name,followupText);
+  }
+  const el=qs('rxTab');
+  const opt={
+    margin:8,
+    filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:2,useCORS:true,letterRendering:true},
+    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+  };
+  if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
+  try{
+    const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
+    const shareText=followupText
+      ?'🦷 Sai Dental Clinic\nRx: '+rxno+'\nPatient: '+name+'\n📅 Next visit: '+followupText
+      :'🦷 Sai Dental Clinic\nRx: '+rxno+'\nPatient: '+name;
+    pdf.save(opt.filename);
+    const patientPhone=qs('pContact').value?.replace(/[^\d]/g,'')||'918122835737';
+    const url='https://wa.me/'+patientPhone+'?text='+encodeURIComponent(shareText);
+    const w=window.open('','sai_wa_share');if(w)w.location.href=url;
+    showToast('PDF downloaded, WhatsApp opened');
+  }catch(e){
+    showToast('Share failed: '+e.message,'err');
+  }
+}
+
+function createApptFromFollowup(name,followupText){
+  let aptDate=dateStr(new Date());
+  const days=calcFollowupDays(followupText);
+  if(days){
+    const d=new Date();
+    d.setDate(d.getDate()+days);
+    aptDate=dateStr(d);
+  }
+  const list=getApts();
+  const entry={id:'apt_'+Date.now(),patientName:name,contact:qs('pContact').value||'',date:aptDate,time:'10:00',
+    purpose:'Follow-up',doctor:'0',notes:'Auto-created from prescription share — '+followupText,
+    status:'pending',adminNotes:'',createdAt:new Date().toISOString()};
+  list.push(entry);
+  list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
+  saveApts(list);
+  renderApts();
+  showToast('📅 Appointment added to calendar for '+aptDate);
 }
 
 /* ─── DASHBOARD ─── */
@@ -1273,6 +1457,99 @@ function deleteApt(id){
   renderApts();
   showToast('Appointment deleted');
 }
+function updateNotifBadge(){
+  const list=getApts();
+  const SURGICAL=['RCT','Extraction','Crown/Bridge','Filling'];
+  const ROUTINE=['Scaling','Consultation'];
+  const today=new Date();const todayStr=dateStr(today);
+  const pending=[];
+  list.forEach(a=>{
+    if(a.whatsappSent)return;
+    const aptDate=new Date(a.date+'T00:00:00');
+    const daysDiff=Math.floor((aptDate-today)/86400000);
+    if(SURGICAL.includes(a.purpose)){
+      if(daysDiff>=0&&daysDiff<=3)pending.push(a);
+    }else if(ROUTINE.includes(a.purpose)){
+      if(daysDiff<=-28&&daysDiff>=-62)pending.push(a);
+    }else{
+      if(daysDiff>=0&&daysDiff<=7)pending.push(a);
+    }
+  });
+  const count=pending.length;
+  const badge=qs('notifCount');
+  if(badge){
+    badge.textContent=count;
+    badge.style.display=count?'inline':'none';
+  }
+  return pending;
+}
+function showNotifModal(){
+  const pending=updateNotifBadge();
+  const el=qs('notifList');
+  if(!el)return;
+  if(!pending||!pending.length){
+    el.innerHTML='<div class="empty-state" style="padding:24px"><p>✅ All reminders sent!<br><span style="font-size:12px;color:var(--muted)">No pending WhatsApp reminders.</span></p></div>';
+  }else{
+    const SURGICAL=['RCT','Extraction','Crown/Bridge','Filling'];
+    const rows=pending.map(a=>{
+      const days=Math.floor((new Date(a.date+'T00:00:00')-new Date())/86400000);
+      const urgent=SURGICAL.includes(a.purpose)?days<=0:'';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:16px">'+(urgent?'🔴':'🟡')+'</span>'+
+        '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--ink)">'+a.patientName+'</div>'+
+        '<div style="font-size:11px;color:var(--muted)">'+(a.purpose||'—')+' · '+a.date+' '+(a.time||'')+'</div></div>'+
+        '<button class="btn-save" style="padding:6px 12px;font-size:11px" onclick="closeModal(null,\'notifModal\');shareAptWhatsApp(\''+a.id+'\')">📤 Send</button></div>';
+    }).join('');
+    el.innerHTML='<div style="margin-bottom:8px;font-size:12px;color:var(--muted)">'+pending.length+' appointment(s) need WhatsApp reminders</div>'+rows;
+  }
+  qs('notifModal').style.display='flex';
+}
+function shareAptWhatsApp(id){
+  const list=getApts();
+  const a=list.find(x=>x.id===id);
+  if(!a)return;
+  a.whatsappSent=1;
+  const idx=list.findIndex(x=>x.id===id);
+  if(idx>=0)list[idx]=a;
+  saveApts(list);
+  updateNotifBadge();
+  const rx=(_histCache||[]).filter(r=>r.patientName===a.patientName).sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||''))[0];
+  const today=dateStr(new Date());
+  const nextApt=list.filter(x=>x.patientName===a.patientName&&x.date>today).sort((a,b)=>a.date.localeCompare(b.date)||(a.time||'').localeCompare(b.time||''))[0];
+  const d=a.date?new Date(a.date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  const rxDate=rx?new Date(rx.dateISO).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+  const visitBenefits={
+    'Consultation':'🟢 Why come? Get a thorough exam, catch issues early, and a personalized care plan for a healthy smile.',
+    'Follow-up':'🟢 Why come? Ensure healing is on track, catch any complications early, and get peace of mind.',
+    'RCT':'🟢 Why come? Confirm the tooth is healing properly, prevent re-infection, and avoid losing the tooth.',
+    'Extraction':'🟢 Why come? Check healing is complete, ensure no dry socket or infection, and discuss replacement options.',
+    'Scaling':'🟢 Why come? Keep gums healthy, prevent gum disease and tooth loss, maintain fresh breath.',
+    'Crown/Bridge':'🟢 Why come? Ensure the restoration fits well, prevent damage to nearby teeth, restore full chewing power.',
+    'Filling':'🟢 Why come? Confirm the filling is secure, prevent further decay, and protect the tooth long-term.',
+    'Other':'🟢 Why come? Follow-up ensures proper recovery and long-lasting results.'
+  };
+  const benefit=visitBenefits[a.purpose]||'🟢 Why come? Follow-up ensures proper recovery and long-lasting results.';
+  const SURGICAL=['RCT','Extraction','Crown/Bridge','Filling','Other'];
+  const isSurgical=SURGICAL.includes(a.purpose);
+  let text='🦷 *Sai Dental Clinic*\n━━━━━━━━━━━━━━━━\n';
+  text+=isSurgical?'🏥 *Surgery / Procedure Completed*':'📅 *Appointment Reminder*';
+  text+='\n━━━━━━━━━━━━━━━━\n\n👤 Patient: '+a.patientName;
+  if(rx&&rx.dateISO)text+='\n📆 Treatment Date: '+rxDate+'\n🏥 Procedure: '+(rx.patientDx||a.purpose||'—');
+  text+='\n\n━━━ *Follow-up Visit* ━━━\n📆 Date: '+d+'\n⏰ Time: '+(a.time||'—');
+  if(a.purpose&&a.purpose!=='Consultation')text+='\n📋 Purpose: '+a.purpose;
+  text+='\n\n━━━ *Benefits* ━━━\n'+benefit;
+  if(rx&&rx.medicines&&rx.medicines.length)text+='\n💊 Prescribed: '+(rx.medicines||[]).map(m=>m.name).join(', ').slice(0,200);
+  if(rx&&rx.followup)text+='\n📅 Follow-up: '+rx.followup;
+  if(nextApt){
+    const nd=new Date(nextApt.date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+    text+='\n\n━━━ *Next Appointment* ━━━\n📆 '+nd+' at '+(nextApt.time||'—')+' ('+(nextApt.purpose||'Visit')+')';
+  }
+  if(a.notes&&!a.notes.startsWith('Auto-created'))text+='\n\n📝 '+a.notes;
+  text+='\n\n━━━━━━━━━━━━━━━━\nThank you — Sai Dental Clinic 🙏';
+  const phone=a.contact?a.contact.replace(/[^\d]/g,''):'918122835737';
+  const url='https://wa.me/'+phone+'?text='+encodeURIComponent(text);
+  window.open(url,'sai_wa_share');
+}
 function aptMonth(dir){
   _aptMonth+=dir;
   if(_aptMonth<0){_aptMonth=11;_aptYear--;}
@@ -1355,6 +1632,7 @@ function renderDayApts(apts,todayStr){
       )+(isToday?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
       '<div class="apt-info-sub">'+(a.purpose||'—')+(a.contact?' · '+a.contact:'')+'</div></div>'+
       '<div class="apt-actions">'+
+      '<button onclick="shareAptWhatsApp(\''+a.id+'\')" title="Share via WhatsApp">📤</button>'+
       (isS?'':(
         '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
         '<button onclick="showAptNoteModal(\''+a.id+'\')" title="Notes">📝</button>'+
@@ -1413,6 +1691,7 @@ function updateAptBadge(){
   const cnt=list.filter(a=>a.date===today).length;
   badge.textContent=cnt;
   badge.style.display=cnt?'inline':'none';
+  updateNotifBadge();
 }
 
 /* ─── INVENTORY ─── */

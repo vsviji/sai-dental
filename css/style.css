@@ -45,6 +45,9 @@ body{font-family: 'DM Sans', system-ui, -apple-system, sans-serif;background:var
 .user-avatar{width:22px;height:22px;border-radius:50%;background:var(--teal);color:#fff;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
 .btn-logout{background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;padding:0;font-weight:500}
 .btn-logout:hover{text-decoration:underline}
+.notif-bell{background:none;border:none;font-size:20px;cursor:pointer;position:relative;padding:4px;border-radius:8px;transition:background .2s;line-height:1}
+.notif-bell:hover{background:var(--teal-l)}
+.notif-count{position:absolute;top:-2px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-weight:600;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--surface)}
 
 /* ── OFFLINE BANNER ── */
 .offline-banner{display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:var(--r);padding:9px 16px;font-size:12px;color:#92400e;margin-bottom:12px;align-items:center;gap:8px}
@@ -160,21 +163,30 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .hist-toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
 .hist-search{flex:1;min-width:200px;max-width:320px}
 .hist-filter,.hist-sort{min-width:150px}
-.hist-item{border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all .2s;background:var(--surface);position:relative}
+.hist-item{border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;transition:all .2s;background:var(--surface);display:flex;flex-wrap:wrap;align-items:flex-start}
 .hist-item:hover{border-color:var(--teal-m);background:var(--teal-l)}
+.hist-main{flex:1;min-width:200px;cursor:pointer}
 .hi-name{font-size:15px;font-weight:500;color:var(--ink);display:flex;flex-wrap:wrap;align-items:center;gap:4px}
 .hi-sub{font-size:12px;color:var(--muted);margin-top:3px}
 .hi-meds{font-size:12px;color:var(--teal);margin-top:5px}
 .hi-amt{font-size:14px;font-weight:600;color:var(--teal-d);font-family: 'Playfair Display', Georgia, serif;margin-left:8px}
-.pay-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;line-height:1.6;margin-left:auto;margin-right:28px}
+.hi-pay-row{display:flex;align-items:center;gap:8px;margin-top:2px;margin-bottom:2px;min-height:22px}
+.hi-pay-row .pay-badge{margin-left:0;margin-right:0}
+.pay-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;line-height:1.6}
 .pay-paid{background:#d1fae5;color:#065f46}
 .pay-partial{background:#fef3c7;color:#92400e}
 .pay-pending{background:#fee2e2;color:#991b1b}
 .hi-badge{display:inline-block;background:var(--teal-l);color:var(--teal);font-size:10px;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:500}
 .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
 .empty-state p{font-size:14px}
-.btn-del-hist{position:absolute;top:10px;right:12px;z-index:20;background:var(--surface);border:1px solid var(--border);border-radius:50%;width:24px;height:24px;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
-.btn-del-hist:hover{background:#FCEBEB;color:var(--red);border-color:var(--red)}
+.hist-hover-actions{display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .2s}
+.hist-item:hover .hist-hover-actions{opacity:1}
+.btn-icon-hist{width:26px;height:26px;border:1px solid var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;transition:all .2s;background:var(--surface);font-family:'DM Sans',sans-serif;padding:0}
+.btn-edit-hist{color:var(--teal);border-color:var(--teal-m)}
+.btn-edit-hist:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
+.btn-del-hist{color:var(--red);border-color:var(--border)}
+.btn-del-hist:hover{background:var(--red);color:#fff;border-color:var(--red)}
+.hist-extra-actions{width:100%;display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
 
 /* ── PATIENT SEARCH ── */
 .pat-search-wrap{position:relative}
@@ -253,6 +265,8 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 [data-theme="dark"] .pat-dropdown{background:var(--surface);border-color:var(--teal-m)}
 [data-theme="dark"] .pwa-banner{background:var(--teal-l);border-color:var(--teal-b);color:var(--ink)}
 [data-theme="dark"] .toast{background:var(--teal-d)}
+[data-theme="dark"] .notif-bell:hover{background:var(--surf2)}
+[data-theme="dark"] .notif-count{border-color:var(--bg)}
 
 /* ── MODAL ── */
 .modal-overlay{position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
