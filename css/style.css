@@ -235,6 +235,20 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   th,td{font-size:10px!important;padding:4px!important;white-space:normal!important}
   body{zoom:.8}
 }
+body.pdf-mode #rxTab .action-bar,
+body.pdf-mode #rxTab .tbl-foot,
+body.pdf-mode #rxTab .btn-del,
+body.pdf-mode #rxTab .no-print{display:none!important}
+body.pdf-mode #rxTab .card,
+body.pdf-mode #rxTab .clinic-card{box-shadow:none;border:1px solid #ccc}
+body.pdf-mode #rxTab thead tr,
+body.pdf-mode #rxTab .clinic-top,
+body.pdf-mode #rxTab .bill-grand{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#0F6E56!important}
+body.pdf-mode #rxTab .doc-strip{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#E1F5EE!important}
+body.pdf-mode #rxTab .tbl-scroll{overflow:visible!important}
+body.pdf-mode #rxTab table{min-width:unset!important;width:100%!important}
+body.pdf-mode #rxTab th,
+body.pdf-mode #rxTab td{font-size:10px!important;padding:4px!important;white-space:normal!important}
 
 /* ═══════════════════════════════════════════
    NEW FEATURES (added improvements)

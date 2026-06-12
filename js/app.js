@@ -170,6 +170,86 @@ function calcFollowupIso(followupStr,fromIso){
   return d.toISOString().slice(0,10);
 }
 function todayIso(){return new Date().toISOString().slice(0,10)}
+function getPdfElement(){
+  const orig=qs('rxTab');
+  if(!orig)return null;
+  const clone=orig.cloneNode(true);
+  clone.id='rxTabPdfClone';
+  clone.style.cssText='position:fixed;top:0;left:0;z-index:-1;pointer-events:none;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
+  clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions').forEach(el=>el.remove());
+  clone.querySelectorAll('input:not([type="hidden"]),select,textarea').forEach(el=>{
+    const d=document.createElement('div');
+    d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
+    if(el.tagName==='SELECT')d.textContent=el.options[el.selectedIndex]?el.options[el.selectedIndex].text:'';
+    else d.textContent=el.value||'';
+    const lbl=el.closest('.fld')?.querySelector('.flbl');
+    if(lbl){
+      const c=document.createElement('div');
+      c.style.cssText='margin-bottom:6px';
+      const lb=lbl.cloneNode(true);
+      lb.style.cssText='font-size:9px;color:#6b7280;display:block;margin-bottom:1px;text-transform:uppercase;letter-spacing:.5px';
+      d.style.cssText='font-size:12px;color:#1a1a1a;padding:2px 0;border-bottom:1px solid #eee';
+      c.append(lb,d);
+      el.parentNode.replaceChild(c,el);
+    }else el.parentNode.replaceChild(d,el);
+  });
+  clone.querySelectorAll('.card,.clinic-card').forEach(el=>el.style.cssText='box-shadow:none;border:1px solid #d1d5db;border-radius:6px;margin-bottom:10px;padding:10px 12px;background:#fff');
+  clone.querySelectorAll('.clinic-top').forEach(el=>{el.style.cssText='background:#0F6E56;color:#fff;padding:12px 14px;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:12px';el.style.background='#0F6E56';});
+  clone.querySelectorAll('.doc-strip').forEach(el=>{el.style.cssText='background:#E1F5EE;padding:8px 14px;border-radius:0 0 6px 6px;display:flex;justify-content:space-between;align-items:center';el.style.background='#E1F5EE';});
+  clone.querySelectorAll('.clinic-title').forEach(el=>el.style.cssText='font-size:15px;font-weight:700;color:#fff');
+  clone.querySelectorAll('.clinic-tagline').forEach(el=>el.style.cssText='font-size:9px;color:rgba(255,255,255,.85)');
+  clone.querySelectorAll('.clinic-meta-strip').forEach(el=>el.style.cssText='display:flex;gap:12px;padding:8px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb');
+  clone.querySelectorAll('.meta-cell').forEach(el=>el.style.cssText='flex:1');
+  clone.querySelectorAll('.mlbl').forEach(el=>el.style.cssText='font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px');
+  clone.querySelectorAll('.mval').forEach(el=>el.style.cssText='font-size:11px;color:#1a1a1a;margin-top:1px');
+  clone.querySelectorAll('.doc-name').forEach(el=>el.style.cssText='font-size:13px;font-weight:600;color:#0F6E56');
+  clone.querySelectorAll('.doc-deg').forEach(el=>el.style.cssText='font-size:9px;color:#4b5563;margin-top:2px');
+  clone.querySelectorAll('.rx-emblem').forEach(el=>el.style.cssText='font-size:22px;font-weight:700;color:#0F6E56;opacity:.6');
+  clone.querySelectorAll('.card-hdr').forEach(el=>{el.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e5e7eb';el.style.borderBottom='1px solid #e5e7eb';});
+  clone.querySelectorAll('.card-title').forEach(el=>el.style.cssText='font-size:12px;font-weight:600;color:#1a1a1a');
+  clone.querySelectorAll('.card-icon').forEach(el=>el.style.cssText='display:flex;align-items:center');
+  clone.querySelectorAll('.pgrid').forEach(el=>el.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:6px 12px');
+  clone.querySelectorAll('.fld').forEach(el=>{el.style.cssText='';el.style.marginBottom='0'});
+  clone.querySelectorAll('table').forEach(el=>el.style.cssText='width:100%;border-collapse:collapse;font-size:10px');
+  clone.querySelectorAll('thead tr').forEach(el=>{el.style.cssText='background:#0F6E56!important';el.style.background='#0F6E56';});
+  clone.querySelectorAll('th').forEach(el=>{el.style.cssText='color:#fff;padding:5px 6px;font-size:10px;text-align:left;font-weight:500';el.style.background='#0F6E56';});
+  clone.querySelectorAll('tbody td').forEach(el=>el.style.cssText='padding:4px 6px;font-size:10px;border-bottom:1px solid #e5e7eb;color:#1a1a1a');
+  clone.querySelectorAll('.med-count').forEach(el=>el.style.cssText='margin-left:auto;font-size:10px;color:#6b7280');
+  clone.querySelectorAll('.tbl-scroll').forEach(el=>el.style.cssText='overflow:visible!important');
+  clone.querySelectorAll('.billing-grid').forEach(el=>el.style.cssText='display:grid;grid-template-columns:1fr 340px;gap:12px');
+  clone.querySelectorAll('.notes-area').forEach(el=>el.style.cssText='font-size:11px;color:#1a1a1a');
+  clone.querySelectorAll('#notes').forEach(el=>{const d=document.createElement('div');d.textContent=el.value||'';d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';el.parentNode.replaceChild(d,el);});
+  clone.querySelectorAll('#followup').forEach(el=>{const d=document.createElement('div');d.textContent=el.value||'';d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';el.parentNode.replaceChild(d,el);});
+  clone.querySelectorAll('.bill-box').forEach(el=>el.style.cssText='background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px');
+  clone.querySelectorAll('.bill-row').forEach(el=>el.style.cssText='display:flex;justify-content:space-between;padding:4px 0;font-size:11px');
+  clone.querySelectorAll('.bill-lbl').forEach(el=>el.style.cssText='color:#6b7280');
+  clone.querySelectorAll('.bill-val').forEach(el=>el.style.cssText='font-weight:500;color:#1a1a1a');
+  clone.querySelectorAll('.bill-grand').forEach(el=>{el.style.cssText='display:flex;justify-content:space-between;padding:6px 0;margin-top:4px;border-top:1px solid #d1d5db;background:#0F6E56!important;color:#fff;margin:4px -10px -10px;padding:8px 10px;border-radius:0 0 6px 6px';el.style.background='#0F6E56';});
+  clone.querySelectorAll('.grand-lbl').forEach(el=>el.style.cssText='font-weight:600;color:#fff');
+  clone.querySelectorAll('.grand-val').forEach(el=>el.style.cssText='font-weight:700;font-size:14px;color:#fff');
+  clone.querySelectorAll('.bill-pay').forEach(el=>{el.style.display='block';el.style.cssText='padding-top:6px;margin-top:4px;border-top:1px solid #e5e7eb';});
+  clone.querySelectorAll('.bill-pay-row').forEach(el=>el.style.cssText='display:flex;justify-content:space-between;padding:3px 0;font-size:11px');
+  clone.querySelectorAll('.bill-pay-lbl').forEach(el=>el.style.cssText='color:#6b7280');
+  clone.querySelectorAll('.bill-pay-val').forEach(el=>el.style.cssText='font-weight:500;color:#1a1a1a');
+  document.body.appendChild(clone);
+  return clone;
+}
+function copyToClipboard(text){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text);return true;}
+  }catch(e){}
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=text;
+    ta.style.cssText='position:fixed;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    return true;
+  }catch(e){}
+  return false;
+}
 
 /* ═══ UI STATE ═══ */
 let rows=[], rid=0, _histCache=[], histPage=1;
@@ -951,7 +1031,20 @@ function payStatusBadge(rx){
 async function sharePaidPrescriptionPdf(rx){
   const name=rx.patientName||'Patient';
   const rxno=rx.rxno||'RX-—';
-  const el=qs('rxTab');
+  const phone=rx.patientContact?rx.patientContact.replace(/[^\d]/g,''):'918122835737';
+  const dx=rx.patientDx||'—';
+  const meds=(rx.medicines||[]).map(m=>m.name).join(', ').slice(0,150);
+  const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  const docName=(getDoctors()[0]||{}).name||'Dr. S. K. Srinivas';
+  const fupText=rx.followup||'';
+  let fupDateStr='';
+  if(fupText){
+    const days=calcFollowupDays(fupText);
+    if(days){const dt=new Date();dt.setDate(dt.getDate()+days);fupDateStr=' ('+dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+')';}
+  }
+  const msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno+'\n🏥 Diagnosis: '+dx+'\n💊 Medicines: '+meds+'\n💰 Amount: ₹'+rx.grand+' | Paid: ₹'+(rx.paid||0)+(fupText?'\n📅 Next visit: '+fupText+fupDateStr:'');
+  copyToClipboard(msgText);
+  const el=getPdfElement();
   if(!el)return;
   if(typeof html2pdf==='undefined'){showToast('PDF library not loaded','warn');return;}
   const opt={
@@ -964,17 +1057,7 @@ async function sharePaidPrescriptionPdf(rx){
   const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   try{
     const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
-    const phone=rx.patientContact?rx.patientContact.replace(/[^\d]/g,''):'918122835737';
-    const dx=rx.patientDx||'—';
-    const meds=(rx.medicines||[]).map(m=>m.name).join(', ').slice(0,150);
-    const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
-    const text='🦷 *Sai Dental Clinic*\n✅ *Payment Received*\n\n👤 Patient: '+name+
-      '\n📋 Rx No: '+rxno+
-      '\n🏥 Diagnosis: '+dx+
-      '\n💊 Medicines: '+meds+
-      '\n💰 Amount: ₹'+rx.grand+' | 💵 Paid: ₹'+(rx.paid||0)+
-      '\n📅 Date: '+dateStr+
-      '\n\nPrescription receipt attached. Thank you! 🙏';
+    const text=msgText;
     if(isMobile&&navigator.canShare){
       const blob=pdf.output('blob');
       const file=new File([blob],opt.filename,{type:'application/pdf'});
@@ -982,12 +1065,14 @@ async function sharePaidPrescriptionPdf(rx){
       showToast('✅ Receipt shared');
     }else{
       pdf.save(opt.filename);
-      const url='https://wa.me/'+phone+'?text='+encodeURIComponent('🦷 Sai Dental Clinic\n✅ Payment Received\n\nPatient: '+name+'\nRx: '+rxno+'\n\n📄 Receipt PDF has been downloaded — please attach it to this chat.');
-      const w=window.open('','sai_wa_share');if(w)w.location.href=url;
-      showToast('📄 PDF downloaded — drag & drop file into WhatsApp Web chat');
+      const url='https://wa.me/'+phone+'?text='+encodeURIComponent(msgText);
+      window.open(url);
+      showToast('📄 Prescription copied & WhatsApp opened');
     }
   }catch(e){
     if(e.name!=='AbortError')showToast('Could not share PDF: '+e.message,'err');
+  }finally{
+    if(el)el.remove();
   }
 }
 function printReceipt(){
@@ -1197,11 +1282,12 @@ function clearDentalChart(){
 }
 
 /* ─── PDF GENERATION ─── */
-function genPDF(){
+async function genPDF(){
   const name=qs('pName').value.trim()||'Patient';
   const rxno=qs('rxNo').textContent;
   document.title=rxno+' — '+name+' — Sai Dental';
-  const el=qs('rxTab');
+  const el=getPdfElement();
+  if(!el)return;
   const opt={
     margin:8,
     filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
@@ -1210,7 +1296,11 @@ function genPDF(){
     jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
   };
   if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
-  html2pdf().set(opt).from(el).save();
+  try{
+    await html2pdf().set(opt).from(el).save();
+  }finally{
+    el.remove();
+  }
   showToast('PDF generated: '+rxno);
 }
 
@@ -1238,11 +1328,21 @@ async function confirmShare(){
   const rxno=qs('rxNo').textContent;
   const followupText=qs('followup').value.trim();
   closeModal(null,'shareModal');
+  const patientPhone=qs('pContact').value?.replace(/[^\d]/g,'')||'918122835737';
+  const docName=(getDoctors()[0]||{}).name||'Dr. S. K. Srinivas';
+  const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  let fupDateStr='';
+  if(followupText){
+    const days=calcFollowupDays(followupText);
+    if(days){const dt=new Date();dt.setDate(dt.getDate()+days);fupDateStr=' ('+dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+')';}
+  }
+  const msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno+(followupText?'\n📅 Next visit: '+followupText+fupDateStr:'');
+  copyToClipboard(msgText);
   showToast('Generating PDF…');
   if(followupText&&qs('shareCreateApt').checked){
     createApptFromFollowup(name,followupText);
   }
-  const el=qs('rxTab');
+  const el=getPdfElement();
   const opt={
     margin:8,
     filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
@@ -1253,16 +1353,14 @@ async function confirmShare(){
   if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
   try{
     const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
-    const shareText=followupText
-      ?'🦷 Sai Dental Clinic\nRx: '+rxno+'\nPatient: '+name+'\n📅 Next visit: '+followupText
-      :'🦷 Sai Dental Clinic\nRx: '+rxno+'\nPatient: '+name;
     pdf.save(opt.filename);
-    const patientPhone=qs('pContact').value?.replace(/[^\d]/g,'')||'918122835737';
-    const url='https://wa.me/'+patientPhone+'?text='+encodeURIComponent(shareText);
-    const w=window.open('','sai_wa_share');if(w)w.location.href=url;
-    showToast('PDF downloaded, WhatsApp opened');
+    const url='https://wa.me/'+patientPhone+'?text='+encodeURIComponent(msgText);
+    window.open(url);
+    showToast('📄 Prescription copied & WhatsApp opened');
   }catch(e){
     showToast('Share failed: '+e.message,'err');
+  }finally{
+    if(el)el.remove();
   }
 }
 
