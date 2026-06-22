@@ -207,10 +207,13 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .pg-info{font-size:12px;color:var(--muted);padding:0 8px}
 
 /* ── TOAST ── */
-.toast{position:fixed;bottom:28px;right:28px;background:var(--teal-d);color:#fff;padding:12px 20px;border-radius:var(--r);font-size:13px;box-shadow:var(--shadow-md);opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;z-index:9999;max-width:320px}
+.toast{position:fixed;bottom:28px;right:28px;background:var(--teal-d);color:#fff;padding:12px 20px;border-radius:var(--r);font-size:13px;box-shadow:var(--shadow-md);opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;z-index:9999;max-width:360px}
 .toast.show{opacity:1;transform:translateY(0)}
+.toast.undo{pointer-events:all;cursor:default}
 .toast.err{background:#b91c1c}
 .toast.warn{background:#92400e}
+.toast-action{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:3px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-left:6px;white-space:nowrap;transition:background .15s}
+.toast-action:hover{background:rgba(255,255,255,.35)}
 
 /* ── PWA INSTALL BANNER ── */
 .pwa-banner{display:none;background:var(--teal-l);border:1px solid var(--teal-b);border-radius:var(--r);padding:10px 16px;font-size:13px;color:var(--teal-d);margin-bottom:12px;align-items:center;gap:10px;flex-wrap:wrap}
@@ -235,20 +238,20 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   th,td{font-size:10px!important;padding:4px!important;white-space:normal!important}
   body{zoom:.8}
 }
-body.pdf-mode #rxTab .action-bar,
-body.pdf-mode #rxTab .tbl-foot,
-body.pdf-mode #rxTab .btn-del,
-body.pdf-mode #rxTab .no-print{display:none!important}
-body.pdf-mode #rxTab .card,
-body.pdf-mode #rxTab .clinic-card{box-shadow:none;border:1px solid #ccc}
-body.pdf-mode #rxTab thead tr,
-body.pdf-mode #rxTab .clinic-top,
-body.pdf-mode #rxTab .bill-grand{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#0F6E56!important}
-body.pdf-mode #rxTab .doc-strip{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#E1F5EE!important}
-body.pdf-mode #rxTab .tbl-scroll{overflow:visible!important}
-body.pdf-mode #rxTab table{min-width:unset!important;width:100%!important}
-body.pdf-mode #rxTab th,
-body.pdf-mode #rxTab td{font-size:10px!important;padding:4px!important;white-space:normal!important}
+body.pdf-mode [id^="rxTab"] .action-bar,
+body.pdf-mode [id^="rxTab"] .tbl-foot,
+body.pdf-mode [id^="rxTab"] .btn-del,
+body.pdf-mode [id^="rxTab"] .no-print{display:none!important}
+body.pdf-mode [id^="rxTab"] .card,
+body.pdf-mode [id^="rxTab"] .clinic-card{box-shadow:none;border:1px solid #ccc}
+body.pdf-mode [id^="rxTab"] thead tr,
+body.pdf-mode [id^="rxTab"] .clinic-top,
+body.pdf-mode [id^="rxTab"] .bill-grand{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#0F6E56!important}
+body.pdf-mode [id^="rxTab"] .doc-strip{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#E1F5EE!important}
+body.pdf-mode [id^="rxTab"] .tbl-scroll{overflow:visible!important}
+body.pdf-mode [id^="rxTab"] table{min-width:unset!important;width:100%!important}
+body.pdf-mode [id^="rxTab"] th,
+body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;white-space:normal!important}
 
 /* ═══════════════════════════════════════════
    NEW FEATURES (added improvements)
@@ -439,6 +442,10 @@ body.pdf-mode #rxTab td{font-size:10px!important;padding:4px!important;white-spa
 
 /* ── RESPONSIVE TWEAKS ── */
 @media(max-width:620px){
+  .topnav{flex-direction:column;align-items:stretch}
+  .tabs{overflow-x:auto;flex-wrap:nowrap;gap:4px;padding-bottom:4px;order:99;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex-shrink:0;scroll-snap-align:start;font-size:12px;padding:7px 14px;white-space:nowrap}
   .dash-grid{grid-template-columns:repeat(2,1fr)}
   .dash-row{grid-template-columns:1fr;gap:16px}
   .inv-item{grid-template-columns:1fr auto auto}
@@ -447,5 +454,11 @@ body.pdf-mode #rxTab td{font-size:10px!important;padding:4px!important;white-spa
   .modal-card-wide{width:100%}
   .profile-stats{grid-template-columns:repeat(2,1fr)}
   .dental-grid{grid-template-columns:repeat(4,1fr)}
+  .clinic-meta-strip{grid-template-columns:1fr}
+  .sync-bar .sync-stats{width:100%;order:2}
+  .user-pill{margin-left:0}
+  .action-bar{gap:6px}
+  .action-bar .btn-save,.action-bar .btn-print,.action-bar .btn-clr,.action-bar .btn-export{flex:1;justify-content:center;padding:8px 8px;font-size:11px;text-align:center}
+  .toast{right:12px;left:12px;max-width:unset;bottom:12px;text-align:center}
 }
 

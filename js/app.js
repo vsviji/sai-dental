@@ -8,6 +8,8 @@ function waitFB(cb){ window._fb ? cb() : setTimeout(()=>waitFB(cb),80); }
 
 let _editingRxId=null;
 let _deleteRxId=null;
+let _lastDeletedRx=null;
+let _undoTimer=null;
 
 /* ═══ AUTH ═══ */
 function doLogin(){
@@ -176,10 +178,11 @@ function getPdfElement(){
   const clone=orig.cloneNode(true);
   clone.id='rxTabPdfClone';
   clone.style.cssText='position:fixed;top:0;left:0;z-index:-1;pointer-events:none;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
+  document.body.classList.add('pdf-mode');
   clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions').forEach(el=>el.remove());
   clone.querySelectorAll('input:not([type="hidden"]),select,textarea').forEach(el=>{
     const d=document.createElement('div');
-    d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
+    d.style.cssText='padding:2px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
     if(el.tagName==='SELECT')d.textContent=el.options[el.selectedIndex]?el.options[el.selectedIndex].text:'';
     else d.textContent=el.value||'';
     const lbl=el.closest('.fld')?.querySelector('.flbl');
@@ -193,44 +196,6 @@ function getPdfElement(){
       el.parentNode.replaceChild(c,el);
     }else el.parentNode.replaceChild(d,el);
   });
-  clone.querySelectorAll('.card,.clinic-card').forEach(el=>el.style.cssText='box-shadow:none;border:1px solid #d1d5db;border-radius:6px;margin-bottom:10px;padding:10px 12px;background:#fff');
-  clone.querySelectorAll('.clinic-top').forEach(el=>{el.style.cssText='background:#0F6E56;color:#fff;padding:12px 14px;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:12px';el.style.background='#0F6E56';});
-  clone.querySelectorAll('.doc-strip').forEach(el=>{el.style.cssText='background:#E1F5EE;padding:8px 14px;border-radius:0 0 6px 6px;display:flex;justify-content:space-between;align-items:center';el.style.background='#E1F5EE';});
-  clone.querySelectorAll('.clinic-title').forEach(el=>el.style.cssText='font-size:15px;font-weight:700;color:#fff');
-  clone.querySelectorAll('.clinic-tagline').forEach(el=>el.style.cssText='font-size:9px;color:rgba(255,255,255,.85)');
-  clone.querySelectorAll('.clinic-meta-strip').forEach(el=>el.style.cssText='display:flex;gap:12px;padding:8px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb');
-  clone.querySelectorAll('.meta-cell').forEach(el=>el.style.cssText='flex:1');
-  clone.querySelectorAll('.mlbl').forEach(el=>el.style.cssText='font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px');
-  clone.querySelectorAll('.mval').forEach(el=>el.style.cssText='font-size:11px;color:#1a1a1a;margin-top:1px');
-  clone.querySelectorAll('.doc-name').forEach(el=>el.style.cssText='font-size:13px;font-weight:600;color:#0F6E56');
-  clone.querySelectorAll('.doc-deg').forEach(el=>el.style.cssText='font-size:9px;color:#4b5563;margin-top:2px');
-  clone.querySelectorAll('.rx-emblem').forEach(el=>el.style.cssText='font-size:22px;font-weight:700;color:#0F6E56;opacity:.6');
-  clone.querySelectorAll('.card-hdr').forEach(el=>{el.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e5e7eb';el.style.borderBottom='1px solid #e5e7eb';});
-  clone.querySelectorAll('.card-title').forEach(el=>el.style.cssText='font-size:12px;font-weight:600;color:#1a1a1a');
-  clone.querySelectorAll('.card-icon').forEach(el=>el.style.cssText='display:flex;align-items:center');
-  clone.querySelectorAll('.pgrid').forEach(el=>el.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:6px 12px');
-  clone.querySelectorAll('.fld').forEach(el=>{el.style.cssText='';el.style.marginBottom='0'});
-  clone.querySelectorAll('table').forEach(el=>el.style.cssText='width:100%;border-collapse:collapse;font-size:10px');
-  clone.querySelectorAll('thead tr').forEach(el=>{el.style.cssText='background:#0F6E56!important';el.style.background='#0F6E56';});
-  clone.querySelectorAll('th').forEach(el=>{el.style.cssText='color:#fff;padding:5px 6px;font-size:10px;text-align:left;font-weight:500';el.style.background='#0F6E56';});
-  clone.querySelectorAll('tbody td').forEach(el=>el.style.cssText='padding:4px 6px;font-size:10px;border-bottom:1px solid #e5e7eb;color:#1a1a1a');
-  clone.querySelectorAll('.med-count').forEach(el=>el.style.cssText='margin-left:auto;font-size:10px;color:#6b7280');
-  clone.querySelectorAll('.tbl-scroll').forEach(el=>el.style.cssText='overflow:visible!important');
-  clone.querySelectorAll('.billing-grid').forEach(el=>el.style.cssText='display:grid;grid-template-columns:1fr 340px;gap:12px');
-  clone.querySelectorAll('.notes-area').forEach(el=>el.style.cssText='font-size:11px;color:#1a1a1a');
-  clone.querySelectorAll('#notes').forEach(el=>{const d=document.createElement('div');d.textContent=el.value||'';d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';el.parentNode.replaceChild(d,el);});
-  clone.querySelectorAll('#followup').forEach(el=>{const d=document.createElement('div');d.textContent=el.value||'';d.style.cssText='padding:3px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';el.parentNode.replaceChild(d,el);});
-  clone.querySelectorAll('.bill-box').forEach(el=>el.style.cssText='background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px');
-  clone.querySelectorAll('.bill-row').forEach(el=>el.style.cssText='display:flex;justify-content:space-between;padding:4px 0;font-size:11px');
-  clone.querySelectorAll('.bill-lbl').forEach(el=>el.style.cssText='color:#6b7280');
-  clone.querySelectorAll('.bill-val').forEach(el=>el.style.cssText='font-weight:500;color:#1a1a1a');
-  clone.querySelectorAll('.bill-grand').forEach(el=>{el.style.cssText='display:flex;justify-content:space-between;padding:6px 0;margin-top:4px;border-top:1px solid #d1d5db;background:#0F6E56!important;color:#fff;margin:4px -10px -10px;padding:8px 10px;border-radius:0 0 6px 6px';el.style.background='#0F6E56';});
-  clone.querySelectorAll('.grand-lbl').forEach(el=>el.style.cssText='font-weight:600;color:#fff');
-  clone.querySelectorAll('.grand-val').forEach(el=>el.style.cssText='font-weight:700;font-size:14px;color:#fff');
-  clone.querySelectorAll('.bill-pay').forEach(el=>{el.style.display='block';el.style.cssText='padding-top:6px;margin-top:4px;border-top:1px solid #e5e7eb';});
-  clone.querySelectorAll('.bill-pay-row').forEach(el=>el.style.cssText='display:flex;justify-content:space-between;padding:3px 0;font-size:11px');
-  clone.querySelectorAll('.bill-pay-lbl').forEach(el=>el.style.cssText='color:#6b7280');
-  clone.querySelectorAll('.bill-pay-val').forEach(el=>el.style.cssText='font-weight:500;color:#1a1a1a');
   document.body.appendChild(clone);
   return clone;
 }
@@ -271,6 +236,15 @@ function showToast(msg,type='ok'){
   t.className='toast show'+(type==='err'?' err':type==='warn'?' warn':'');
   clearTimeout(t._t);
   t._t=setTimeout(()=>t.className='toast',3200);
+}
+function showUndoToast(msg,onUndo){
+  const t=qs('toast');
+  clearTimeout(t._t);clearTimeout(_undoTimer);
+  t.innerHTML=msg+' <button class="toast-action" id="undoBtn">⏪ Undo</button>';
+  t.className='toast show undo';
+  const undoBtn=qs('undoBtn');
+  if(undoBtn)undoBtn.onclick=()=>{clearTimeout(_undoTimer);t.className='toast';onUndo();};
+  _undoTimer=setTimeout(()=>{t.className='toast';_lastDeletedRx=null;},5000);
 }
 
 /* ─── TABLE ROWS ─── */
@@ -620,28 +594,39 @@ async function confirmDelete(){
   btn.disabled=true;btn.textContent='Deleting…';
   try{
     await deleteRxById(id);
-    /* Auto-adjust RX counter when deleting the most recent */
     const m=(rx.rxno||'').match(/RX-(\d+)/i);
     if(m){
       const rxNum=parseInt(m[1],10);
       try{
         const c=await getSetting('rxCounter')||0;
         if(rxNum>=c){await setSetting('rxCounter',Math.max(0,rxNum-1));}
-      }catch(e){/* ignore */}
+      }catch(e){}
     }
     _histCache=_histCache.filter(r=>r.id!==id);
     updateStats();filterHist();
     closeModal(null,'delConfirmModal');
-    showToast('Prescription deleted');
-    /* Refresh displayed next RX number */
     if(!_editingRxId){
       getSetting('rxCounter').then(c=>{
         const rno=qs('rxNo');
         if(rno)rno.textContent='RX-'+String((c||0)+1).padStart(4,'0');
       });
     }
+    _lastDeletedRx={...rx};
+    showUndoToast('Prescription deleted',()=>undoLastDelete());
   }catch(e){showToast('Delete failed: '+e.message,'err');}
   btn.disabled=false;btn.textContent='Delete';
+}
+
+async function undoLastDelete(){
+  const rx=_lastDeletedRx;
+  if(!rx){showToast('Nothing to undo','warn');return;}
+  _lastDeletedRx=null;
+  try{
+    await putRx(rx);
+    _histCache.unshift(rx);
+    updateStats();filterHist();
+    showToast('Undo: '+rx.rxno+' restored');
+  }catch(e){showToast('Undo failed: '+e.message,'err');}
 }
 
 async function deleteRx(id){
@@ -1046,7 +1031,7 @@ async function sharePaidPrescriptionPdf(rx){
   copyToClipboard(msgText);
   const el=getPdfElement();
   if(!el)return;
-  if(typeof html2pdf==='undefined'){showToast('PDF library not loaded','warn');return;}
+  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library not loaded','warn');return;}
   const opt={
     margin:8,
     filename:rxno+'_'+name.replace(/\s+/g,'_')+'_receipt.pdf',
@@ -1073,6 +1058,7 @@ async function sharePaidPrescriptionPdf(rx){
     if(e.name!=='AbortError')showToast('Could not share PDF: '+e.message,'err');
   }finally{
     if(el)el.remove();
+    document.body.classList.remove('pdf-mode');
   }
 }
 function printReceipt(){
@@ -1288,6 +1274,7 @@ async function genPDF(){
   document.title=rxno+' — '+name+' — Sai Dental';
   const el=getPdfElement();
   if(!el)return;
+  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library loading, try again','warn');return;}
   const opt={
     margin:8,
     filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
@@ -1295,13 +1282,13 @@ async function genPDF(){
     html2canvas:{scale:2,useCORS:true,letterRendering:true},
     jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
   };
-  if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
   try{
     await html2pdf().set(opt).from(el).save();
+    showToast('PDF generated: '+rxno);
   }finally{
     el.remove();
+    document.body.classList.remove('pdf-mode');
   }
-  showToast('PDF generated: '+rxno);
 }
 
 /* ─── SHARE ─── */
@@ -1343,6 +1330,8 @@ async function confirmShare(){
     createApptFromFollowup(name,followupText);
   }
   const el=getPdfElement();
+  if(!el){showToast('Could not generate PDF view','err');return;}
+  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library loading, try again','warn');return;}
   const opt={
     margin:8,
     filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
@@ -1350,7 +1339,6 @@ async function confirmShare(){
     html2canvas:{scale:2,useCORS:true,letterRendering:true},
     jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
   };
-  if(typeof html2pdf==='undefined'){showToast('PDF library loading, try again','warn');return;}
   try{
     const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
     pdf.save(opt.filename);
@@ -1361,6 +1349,7 @@ async function confirmShare(){
     showToast('Share failed: '+e.message,'err');
   }finally{
     if(el)el.remove();
+    document.body.classList.remove('pdf-mode');
   }
 }
 
@@ -1712,25 +1701,30 @@ function selAptDay(ds){
 function renderDayApts(apts,todayStr){
   const el=qs('aptDayApts');
   const isS=isStaff();
+  const isToday=_aptSelDate===todayStr;
+  const pendingApts=apts.filter(a=>!a.whatsappSent);
   if(!apts.length){
     el.innerHTML='<div class="apt-cal-empty">No appointments on '+_aptSelDate+'</div>'+
       '<button class="btn-add" onclick="showAptForm()" style="display:block;margin:8px auto 0">+ Add Appointment</button>';
     updateAptBadge();
     return;
   }
-  let html='<div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:8px">'+_aptSelDate+' — '+apts.length+' appointment(s)</div>'+
-    '<div class="apt-day-list">';
+  let html='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+    '<span style="font-size:13px;font-weight:500;color:var(--muted)">'+_aptSelDate+' — '+apts.length+' appointment(s)</span>'+
+    (isToday&&pendingApts.length?`<button class="btn-sm" style="margin-left:auto;color:var(--teal);border-color:var(--teal-m)" onclick="sendAllReminders()">📤 Remind All (${pendingApts.length})</button>`:'')+
+    '</div><div class="apt-day-list">';
   apts.forEach(a=>{
-    const isToday=a.date===todayStr;
     const st=a.status||'pending';
+    const reminded=a.whatsappSent;
     html+='<div class="apt-item" style="'+(isToday?'border-color:var(--teal-m);background:var(--teal-l)':'')+'">'+
       '<div class="apt-time">'+(a.time||'—')+'</div>'+
       '<div><div class="apt-info-name">'+a.patientName+(
         (st==='done'?' <span class="apt-status done">✅ Done</span>':' <span class="apt-status pending">🔴 Pending</span>')
-      )+(isToday?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
+      )+(reminded?' <span class="apt-status done" style="font-size:10px">✅ Reminded</span>':'')+
+      (isToday&&!reminded?' <span style="font-size:10px;color:var(--teal)">Today</span>':'')+'</div>'+
       '<div class="apt-info-sub">'+(a.purpose||'—')+(a.contact?' · '+a.contact:'')+'</div></div>'+
       '<div class="apt-actions">'+
-      '<button onclick="shareAptWhatsApp(\''+a.id+'\')" title="Share via WhatsApp">📤</button>'+
+      '<button onclick="shareAptWhatsApp(\''+a.id+'\')" title="'+(reminded?'Resend WhatsApp':'Send WhatsApp')+'">'+(reminded?'🔄':'📤')+'</button>'+
       (isS?'':(
         '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
         '<button onclick="showAptNoteModal(\''+a.id+'\')" title="Notes">📝</button>'+
@@ -1741,6 +1735,15 @@ function renderDayApts(apts,todayStr){
   html+='</div>';
   el.innerHTML=html;
   updateAptBadge();
+}
+function sendAllReminders(){
+  const all=getApts();
+  const pending=all.filter(a=>a.date===_aptSelDate&&!a.whatsappSent);
+  if(!pending.length){showToast('No pending appointments to remind','warn');return;}
+  all.forEach(a=>{if(a.date===_aptSelDate)a.whatsappSent=1;});
+  saveApts(all);
+  renderApts();
+  showToast('✅ Marked '+pending.length+' as reminded — send individually with 📤');
 }
 function showAptNoteModal(id){
   if(isStaff()){showToast('Staff cannot edit appointments','err');return;}
