@@ -80,6 +80,7 @@
 
   <!-- Sync bar -->
   <div class="sync-bar">
+    <button class="back-btn" id="backBtn" onclick="goBack()" title="Back" style="display:none">←</button>
     <div class="sync-dot" id="syncDot"></div>
     <span id="syncMsg">Connecting…</span>
     <div class="sync-stats" id="syncStats" style="display:none">
@@ -113,10 +114,11 @@
       </div>
     </div>
     <div class="tabs">
-      <button class="tab on" onclick="sw('rx',this)">New Prescription</button>
+      <button class="tab on" onclick="newRx()">New Prescription</button>
       <button class="tab" onclick="sw('hist',this)">History <span class="hbadge" id="hcnt">0</span></button>
       <button class="tab" onclick="sw('dash',this)">Dashboard</button>
-      <button class="tab" onclick="sw('apt',this)">Appointments <span class="hbadge" id="aptBadge" style="display:none"></span></button>
+      <button class="tab" onclick="sw('apt',this)">Appointments <span class="hbadge" id="aptBadge">0</span></button>
+      <button class="tab" onclick="sw('pat',this)">Patients</button>
       <button class="tab" onclick="sw('inv',this)">Inventory</button>
       <button class="tab" onclick="sw('fup',this)">Follow-ups <span class="hbadge" id="fupBadge" style="display:none"></span></button>
     </div>
@@ -334,6 +336,28 @@
           </div>
         </div>
       </div>
+    <!-- X-Ray Uploads -->
+    <div class="card" id="xrayCard" style="display:none">
+      <div class="card-hdr">
+        <div class="card-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v10H2z" stroke="#0F6E56" stroke-width="1.3" fill="none"/><circle cx="7" cy="5.5" r="1.5" stroke="#0F6E56" stroke-width="1.3" fill="none"/><path d="M2 9.5l3-3 2 2 3-3 2 2" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>
+        </div>
+        <span class="card-title">X-rays / Scans</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="xrayCount">0</span>
+      </div>
+      <div class="card-body">
+        <div id="xrayGallery"></div>
+        <div id="xrayUploadArea" style="margin-top:12px">
+          <label class="btn-add" id="xrayUploadBtn" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+            📷 Upload X-ray
+            <input type="file" id="xrayFileInput" accept="image/*,.pdf" style="display:none" onchange="handleXrayUpload(event)"/>
+          </label>
+          <span style="font-size:11px;color:var(--hint);margin-left:8px">JPG, PNG, PDF</span>
+          <div id="xrayProgress" style="display:none;margin-top:8px;font-size:12px;color:var(--teal)">Uploading…</div>
+        </div>
+      </div>
+    </div>
+
       <div class="action-bar">
         <div style="width:100%;font-size:11px;color:var(--hint);line-height:1.6;order:99">
           ⌨️ Ctrl+S to save &nbsp;·&nbsp; 🖨️ Print hides all controls
@@ -540,6 +564,100 @@
       </div>
       <div class="card-body">
         <div id="fupList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PATIENTS TAB -->
+  <div id="patTab" style="display:none">
+    <div id="patientListSection">
+      <div class="card">
+        <div class="card-hdr">
+          <div class="card-icon">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="4.5" r="2.5" stroke="#0F6E56" stroke-width="1.3" fill="none"/><path d="M1 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" fill="none"/><circle cx="12" cy="4" r="2" stroke="#0F6E56" stroke-width="1.3" fill="none"/><path d="M11 10.5c1-.5 2.2-.8 3.5-.8 1.3 0 2.5.3 3.5.8" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>
+          </div>
+          <span class="card-title">Patient Management</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="patCount">0 patients</span>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+            <input type="text" id="patSearch" placeholder="🔍 Search by name or mobile…" oninput="renderPatientList()" style="flex:1;min-width:180px;padding:9px 14px;border:1px solid var(--border);border-radius:var(--r);font-size:13px;background:var(--bg);color:var(--ink)"/>
+            <button class="btn-clr" onclick="renderPatientList()" style="padding:8px 16px">🔄 Refresh</button>
+          </div>
+          <div id="patientList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="patientProfileSection" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <button class="btn-clr" onclick="showPatientList()" style="padding:6px 14px;font-size:12px">← Back to Patients</button>
+      </div>
+      <div class="card" id="patientProfileCard">
+        <div class="card-hdr">
+          <div class="card-icon">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="#0F6E56" stroke-width="1.3" fill="none"/><path d="M2 15c0-4 2.7-7 6-7s6 3 6 7" stroke="#0F6E56" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>
+          </div>
+          <span class="card-title" id="patProfileName">Patient</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="patProfileMobile"></span>
+        </div>
+        <div class="card-body">
+          <div id="patProfileLoading" style="text-align:center;padding:24px;color:var(--muted)">Loading profile…</div>
+          <div id="patProfileContent" style="display:none">
+            <!-- Stats row -->
+            <div class="profile-stats" id="patProfileStats"></div>
+            <!-- Editable info card -->
+            <div class="card" style="margin-bottom:14px;box-shadow:none;border:1px solid var(--border)">
+              <div class="card-hdr" style="padding:10px 16px">
+                <span class="card-title">Patient Information</span>
+                <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="patInfoEditHint">Only admin / doctor can edit</span>
+              </div>
+              <div class="card-body" style="padding:14px 16px">
+                <div class="apt-form-grid" id="patInfoForm">
+                  <div class="fld">
+                    <label class="flbl">Full Name</label>
+                    <input type="text" id="patEditName" data-field="name" disabled onchange="queuePatientSave()"/>
+                  </div>
+                  <div class="fld">
+                    <label class="flbl">Age</label>
+                    <input type="text" id="patEditAge" data-field="age" disabled onchange="queuePatientSave()"/>
+                  </div>
+                  <div class="fld">
+                    <label class="flbl">Gender</label>
+                    <input type="text" id="patEditGender" data-field="gender" disabled onchange="queuePatientSave()"/>
+                  </div>
+                  <div class="fld">
+                    <label class="flbl">Mobile</label>
+                    <input type="text" id="patEditMobile" disabled style="font-weight:600"/>
+                  </div>
+                  <div class="fld" style="grid-column:span 2">
+                    <label class="flbl">Address</label>
+                    <input type="text" id="patEditAddress" data-field="address" disabled onchange="queuePatientSave()" placeholder="Home address"/>
+                  </div>
+                  <div class="fld" style="grid-column:span 2">
+                    <label class="flbl">Medical History</label>
+                    <textarea id="patEditMedicalHistory" data-field="medicalHistory" disabled onchange="queuePatientSave()" placeholder="Diabetes, hypertension, allergies, past surgeries…" style="min-height:50px;resize:vertical"></textarea>
+                  </div>
+                  <div class="fld" style="grid-column:span 2">
+                    <label class="flbl">Notes</label>
+                    <textarea id="patEditNotes" data-field="notes" disabled onchange="queuePatientSave()" placeholder="Any additional notes about this patient" style="min-height:50px;resize:vertical"></textarea>
+                  </div>
+                </div>
+                <div style="margin-top:8px;font-size:12px;color:var(--teal);display:none" id="patSaveHint">✏️ Changes saved</div>
+              </div>
+            </div>
+            <!-- Visit History -->
+            <div class="card" style="box-shadow:none;border:1px solid var(--border)">
+              <div class="card-hdr" style="padding:10px 16px">
+                <span class="card-title">Visit History</span>
+                <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="patVisitCount"></span>
+              </div>
+              <div class="card-body" style="padding:14px 16px">
+                <div id="patVisitList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

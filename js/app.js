@@ -42,6 +42,7 @@ function doLogout(){
 const RX_COL   = () => window._rxCol();
 const SETT_COL = () => window._fb.collection(window._db,'settings');
 const FUP_COL  = () => window._fupCol();
+const PAT_COL  = () => window._patCol();
 
 async function getAllRx(){
   const snap = await window._fb.getDocs(
@@ -179,7 +180,7 @@ function getPdfElement(){
   clone.id='rxTabPdfClone';
   clone.style.cssText='position:fixed;top:0;left:0;z-index:-1;pointer-events:none;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
   document.body.classList.add('pdf-mode');
-  clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions').forEach(el=>el.remove());
+  clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions,#xrayCard').forEach(el=>el.remove());
   clone.querySelectorAll('input:not([type="hidden"]),select,textarea').forEach(el=>{
     const d=document.createElement('div');
     d.style.cssText='padding:2px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
@@ -219,6 +220,9 @@ function copyToClipboard(text){
 /* ═══ UI STATE ═══ */
 let rows=[], rid=0, _histCache=[], histPage=1;
 const HIST_PER=15;
+
+/* ─── Back button navigation history ─── */
+let _navHistory = [];
 
 function qs(id){return document.getElementById(id)}
 function fmt(n){return '₹'+parseFloat(n).toFixed(2)}
@@ -395,13 +399,14 @@ async function saveRx(){
       rxno=await nextRxNo();
       id='rx_'+Date.now();
     }
+    const rxdata = _histCache.find(r => r.id === id) || existing || {};
     const rx={
       id,rxno,
       date:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
       dateISO:new Date().toISOString(),
       followupDate:calcFollowupIso(qs('followup').value)||'',
       followupStatus:qs('followup').value?'pending':'',
-      followupNotes:existing?.followupNotes||[],
+      followupNotes:rxdata.followupNotes||existing?.followupNotes||[],
       patientName:   qs('pName').value,
       patientAge:    qs('pAge').value,
       patientGender: qs('pGender').value,
@@ -414,8 +419,9 @@ async function saveRx(){
       notes:         qs('notes').value,
       followup:      qs('followup').value,
       grand:         Math.round(grand),
-      paid:          existing?.paid||0,
-      paymentStatus: existing?.paymentStatus||'pending'
+      paid:          rxdata.paid||0,
+      paymentStatus: rxdata.paymentStatus||'pending',
+      xrays:         rxdata.xrays||[]
     };
     try{
       await putRx(rx);
@@ -423,23 +429,25 @@ async function saveRx(){
       delete rx.paid;delete rx.paymentStatus;
       await putRx(rx);
     }
-    if(_editingRxId){
-      const idx=_histCache.findIndex(r=>r.id===_editingRxId);
-      if(idx>=0)_histCache[idx]=rx;
-      _editingRxId=null;
-      _payRxId=rx.id;
-      updateBillPay(rx);
-      qs('btnSaveLabel').textContent='Save Prescription';
-      showToast('✓ '+rxno+' updated');
-    }else{
+    _editingRxId=rx.id;
+    _xrayRxId=rx.id;
+    const xc=qs('xrayCard');
+    if(xc){xc.style.display='block';delete xc.dataset.readonly;}
+    renderXrayGallery();
+    if(!isStaff()){const ub=qs('xrayUploadBtn');if(ub)ub.style.display='inline-flex';}
+    const wasNew = !_histCache.find(r=>r.id===rx.id);
+    if(wasNew){
       _histCache.unshift(rx);
       updateStats();
-      _payRxId=rx.id;
-      updateBillPay(rx);
-      const counter=await getSetting('rxCounter')||0;
-      qs('rxNo').textContent='RX-'+String(counter+1).padStart(4,'0');
-      showToast('✓ '+rxno+' saved'+(navigator.onLine?' to Firebase':' offline — will sync when online'));
+    }else{
+      const idx=_histCache.findIndex(r=>r.id===rx.id);
+      if(idx>=0)_histCache[idx]=rx;
     }
+    _payRxId=rx.id;
+    updateBillPay(rx);
+    qs('btnSaveLabel').textContent='💾 Update '+rxno;
+    updatePatientFromRx(rx);
+    showToast('✓ '+rxno+' '+(wasNew?'saved':'updated'));
   }catch(e){
     showToast('Save failed: '+e.message,'err');
   }
@@ -525,6 +533,9 @@ function setFormReadOnly(ro){
   if(payActions)payActions.style.display=ro?'none':'';
   /* Disable all medicine row selects/inputs */
   document.querySelectorAll('#rxBody select,#rxBody input').forEach(el=>el.disabled=ro);
+  /* X-ray upload */
+  const xub=qs('xrayUploadBtn');
+  if(xub)xub.style.display=ro?'none':'inline-flex';
 }
 function loadRx(id){
   const isS=isStaff();
@@ -541,8 +552,16 @@ function loadRx(id){
   qs('followup').value=rx.followup      ||'';
   rows=[];rid=0;(rx.medicines||[]).forEach(m=>addRow(m));
   setFormReadOnly(isS);
+  _editingRxId=id;
   _payRxId=rx.id;
+  _xrayRxId=rx.id;
+  qs('btnSaveLabel').textContent=isS?'Viewing '+rx.rxno:'💾 Update '+rx.rxno;
   updateBillPay(rx);
+  const xc=qs('xrayCard');
+  if(xc){xc.style.display='block';delete xc.dataset.readonly;}
+  renderXrayGallery();
+  const uploadBtn=qs('xrayUploadBtn');
+  if(uploadBtn)uploadBtn.style.display=isS?'none':'inline-flex';
   sw('rx',document.querySelectorAll('.tab')[0]);
   /* Show follow-up notes if any (from prescription + separate collection) */
   const fupEl=qs('loadedFupNotes');
@@ -687,19 +706,52 @@ async function exportAll(){
 
 /* ─── TABS ─── */
 function sw(tab,btn){
-  const tabs=['rx','hist','dash','apt','inv','fup'];
+  const tabs=['rx','hist','dash','apt','pat','inv','fup'];
+  const curTab = tabs.find(t => {
+    const el = qs(t+'Tab');
+    return el && el.style.display !== 'none';
+  });
+  if (curTab && curTab !== tab) {
+    _navHistory.push(curTab);
+  }
   tabs.forEach(t=>{
     const el=qs(t+'Tab');
     if(el)el.style.display=t===tab?'block':'none';
   });
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
+  updateBackBtn();
   if(tab==='hist')loadHist();
   if(tab==='dash')renderDash();
   if(tab==='apt'){todayApt();}
   if(tab==='inv')renderInv();
   if(tab==='fup')renderFollowups();
+  if(tab==='pat'){
+    if(!_histCache.length) loadHist();
+    renderPatientList();
+  }
+  /* Ensure X-ray card is visible on rx tab */
+  if(tab==='rx' && !_xrayRxId){
+    const xc=qs('xrayCard');
+    if(xc){xc.style.display='block';xc.dataset.readonly='1';}
+    const xg=qs('xrayGallery');
+    if(xg)xg.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">💡 Save this prescription first to enable X-ray uploads</div>';
+    const xu=qs('xrayUploadBtn');
+    if(xu)xu.style.display='none';
+  }
 }
+function goBack(){
+  if (!_navHistory.length) return;
+  const prev = _navHistory.pop();
+  const btn = document.querySelector(`.tab[onclick*="'${prev}'"]`);
+  if (btn) sw(prev, btn);
+}
+function updateBackBtn(){
+  const btn = qs('backBtn');
+  if (!btn) return;
+  btn.style.display = _navHistory.length ? 'flex' : 'none';
+}
+
 function printRx(){
   document.title=qs('rxNo').textContent+' — '+(qs('pName').value||'Patient')+' — Sai Dental';
   window.print();
@@ -716,6 +768,15 @@ function newRxForm(){
   ['pGender','pDx'].forEach(id=>qs(id).value='');
   qs('pAllergy').value='';
   _payRxId=null;
+  _xrayRxId=null;
+  const xc=qs('xrayCard');
+  if(xc){xc.style.display='block';xc.dataset.readonly='1';}
+  const xgal=qs('xrayGallery');
+  if(xgal)xgal.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">💡 Save this prescription first to enable X-ray uploads</div>';
+  const xcnt=qs('xrayCount');
+  if(xcnt)xcnt.textContent='0';
+  const xub=qs('xrayUploadBtn');
+  if(xub)xub.style.display='none';
   const sec=qs('billPaySection');
   if(sec)sec.style.display='none';
   setFormReadOnly(false);
@@ -745,6 +806,8 @@ async function repeatPreviousRx(){
 }
 function newRx(){
   newRxForm();
+  const rxBtn = document.querySelectorAll('.tab')[0];
+  if(rxBtn) sw('rx', rxBtn);
   showToast('New prescription ready');
 }
 
@@ -1136,38 +1199,281 @@ function showPatientVisits(name,contact){
   return html;
 }
 
-/* ─── PATIENT PROFILE ─── */
+/* ─── PATIENT MANAGEMENT ─── */
+let _activePatientMobile = null;
+let _patSaveTimer = null;
+
+function normalizeMobile(val){
+  return (val||'').replace(/[^\d]/g,'');
+}
+
+function getPatientVisits(mobile){
+  if(!mobile) return [];
+  return _histCache.filter(r => normalizeMobile(r.patientContact) === mobile);
+}
+
 function showPatientProfile(id){
   const rx=_histCache.find(r=>r.id===id);
   if(!rx)return;
-  const name=rx.patientName||'';
-  const contact=rx.patientContact||'';
-  const visits=_histCache.filter(r=>
-    (r.patientName||'').toLowerCase()===name.toLowerCase()&&
-    (!contact||(r.patientContact||'').includes(contact))
-  );
-  const totalAmt=visits.reduce((s,r)=>s+(r.grand||0),0);
-  const totalRx=visits.length;
-  const commonDx=[...new Set(visits.map(r=>r.patientDx).filter(Boolean))].slice(0,3).join(', ');
-  qs('patProfileTitle').textContent=name;
-  let html='<div class="profile-header">'+
-    '<div class="profile-avatar">'+name[0]+'</div>'+
-    '<div><div class="profile-name">'+name+'</div>'+
-    '<div class="profile-meta">'+(contact||'')+' · '+commonDx+'</div></div></div>'+
-    '<div class="profile-stats">'+
-    '<div class="profile-stat"><div class="profile-stat-val">'+totalRx+'</div><div class="profile-stat-lbl">Total Visits</div></div>'+
-    '<div class="profile-stat"><div class="profile-stat-val">₹'+totalAmt+'</div><div class="profile-stat-lbl">Total Amount</div></div>'+
-    '<div class="profile-stat"><div class="profile-stat-val">₹'+(totalRx?Math.round(totalAmt/totalRx):0)+'</div><div class="profile-stat-lbl">Avg per Visit</div></div>'+
-    '</div>'+
-    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;font-weight:500">Visit History</div>';
-  visits.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||'')).forEach(r=>{
-    html+='<div class="profile-visit" onclick="loadRx(\''+r.id+'\')">'+
-      '<div class="profile-visit-top"><span class="profile-visit-rx">'+r.rxno+'</span><span class="profile-visit-date">'+r.date+'</span></div>'+
-      '<div class="profile-visit-dx">'+(r.patientDx||'—')+(r.medicines?.length?' · '+r.medicines.length+' medicines':'')+'</div>'+
-      '<div class="profile-visit-amt">₹'+(r.grand||0)+'</div></div>';
+  const mobile = normalizeMobile(rx.patientContact);
+  if(mobile){
+    _activePatientMobile = mobile;
+    qs('patientListSection').style.display='none';
+    qs('patientProfileSection').style.display='block';
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+    const patBtn = document.querySelectorAll('.tab')[4];
+    if(patBtn){ patBtn.classList.add('on'); sw('pat', patBtn); }
+    renderPatientProfile(mobile);
+  }else{
+    /* Fallback: group by name */
+    const name = (rx.patientName||'').toLowerCase().trim();
+    if(!name){ showToast('Patient has no name or mobile to link profile','warn'); return; }
+    const visits = _histCache.filter(r => (r.patientName||'').toLowerCase().trim() === name);
+    if(!visits.length){ showToast('No visits found for this patient','warn'); return; }
+    _activePatientMobile = null;
+    qs('patientListSection').style.display='none';
+    qs('patientProfileSection').style.display='block';
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+    const patBtn = document.querySelectorAll('.tab')[4];
+    if(patBtn){ patBtn.classList.add('on'); sw('pat', patBtn); }
+    renderNameBasedProfile(visits);
+  }
+}
+
+function openPatientProfile(mobile){
+  if(!mobile)return;
+  _activePatientMobile = mobile;
+  qs('patientListSection').style.display='none';
+  qs('patientProfileSection').style.display='block';
+  renderPatientProfile(mobile);
+}
+
+function showPatientList(){
+  _activePatientMobile = null;
+  qs('patientListSection').style.display='block';
+  qs('patientProfileSection').style.display='none';
+  renderPatientList();
+}
+
+function renderPatientList(){
+  const el = qs('patientList');
+  const cnt = qs('patCount');
+  if(!el)return;
+  const q = (qs('patSearch')?.value||'').toLowerCase();
+  const grouped = {};
+  _histCache.forEach((r, idx) => {
+    let key = normalizeMobile(r.patientContact);
+    if(!key){
+      const nk = (r.patientName||'unknown').toLowerCase().replace(/\s+/g,'');
+      key = '__name__' + nk + '__' + idx;
+    }
+    if(!grouped[key]) grouped[key] = { key, mobile: normalizeMobile(r.patientContact), name: r.patientName||'', visits: [], totalAmt: 0, totalPaid: 0, lastDate: '', lastDx: '' };
+    const p = grouped[key];
+    p.visits.push(r);
+    p.totalAmt += r.grand||0;
+    p.totalPaid += r.paid||0;
+    if(!p.name) p.name = r.patientName||'';
+    if((r.dateISO||'') > (p.lastDate||'')){ p.lastDate = r.dateISO; p.lastDx = r.patientDx||''; }
   });
-  qs('patProfileBody').innerHTML=html;
-  qs('patProfileModal').style.display='flex';
+  let patients = Object.values(grouped);
+  if(q){
+    patients = patients.filter(p => (p.name||'').toLowerCase().includes(q) || (p.mobile||'').includes(q));
+  }
+  patients.sort((a,b)=>((b.lastDate||'').localeCompare(a.lastDate||'')));
+  cnt.textContent = patients.length + ' patient(s)';
+  if(!patients.length){
+    el.innerHTML = '<div class="pat-empty">' + (q ? 'No patients match your search' : 'No patients yet') + '</div>';
+    return;
+  }
+  el.innerHTML = patients.map(p => {
+    const bal = p.totalAmt - p.totalPaid;
+    const hasMobile = !!p.mobile;
+    const onClick = hasMobile
+      ? "openPatientProfile('" + p.mobile + "')"
+      : "showToast('Add a mobile number to this prescription for full patient profile','warn')";
+    return '<div class="pat-item" onclick="' + onClick + '">' +
+      '<div class="pat-avatar">' + (p.name ? p.name[0].toUpperCase() : '?') + '</div>' +
+      '<div class="pat-info">' +
+      '<div class="pat-name">' + (p.name||'Unknown') + '</div>' +
+      '<div class="pat-meta">' + (hasMobile ? '📞 ' + p.mobile : '⚠️ No mobile') + (p.lastDx ? ' · ' + p.lastDx : '') + '</div>' +
+      '</div>' +
+      '<div class="pat-stats">' +
+      '<span>Visits <span class="pat-stat-val">' + p.visits.length + '</span></span>' +
+      '<span>Total <span class="pat-stat-val">₹' + p.totalAmt + '</span></span>' +
+      '<span>Balance <span class="pat-stat-val" style="color:' + (bal>0?'var(--red)':'var(--teal-d)') + '">₹' + Math.max(0,bal) + '</span></span>' +
+      '</div>' +
+      '</div>';
+  }).join('');
+}
+
+async function renderPatientProfile(mobile){
+  _activePatientMobile = mobile;
+  const el = qs('patProfileContent');
+  const loading = qs('patProfileLoading');
+  const visits = getPatientVisits(mobile);
+  if(loading) loading.style.display = 'block';
+  if(el) el.style.display = 'none';
+
+  const totalAmt = visits.reduce((s,r)=>s+(r.grand||0),0);
+  const totalPaid = visits.reduce((s,r)=>s+(r.paid||0),0);
+  const totalRx = visits.length;
+  const commonDx = [...new Set(visits.map(r=>r.patientDx).filter(Boolean))];
+  const allMeds = [...new Set(visits.flatMap(r=>(r.medicines||[]).map(m=>m.name).filter(Boolean)))];
+  const allAdvice = [...new Set(visits.map(r=>r.notes).filter(Boolean))];
+
+  qs('patProfileName').textContent = (visits[0]?.patientName||'Patient');
+  qs('patProfileMobile').textContent = '📞 ' + mobile;
+  qs('patVisitCount').textContent = totalRx + ' visit(s)';
+
+  /* Stats */
+  const bal = totalAmt - totalPaid;
+  qs('patProfileStats').innerHTML =
+    '<div class="profile-stat"><div class="profile-stat-val">' + totalRx + '</div><div class="profile-stat-lbl">Total Visits</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">₹' + totalAmt + '</div><div class="profile-stat-lbl">Total Bill</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">₹' + totalPaid + '</div><div class="profile-stat-lbl">Paid</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val" style="color:' + (bal>0?'var(--red)':'var(--teal-d)') + '">₹' + Math.max(0,bal) + '</div><div class="profile-stat-lbl">Balance</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">' + (totalRx?Math.round(totalAmt/totalRx):0) + '</div><div class="profile-stat-lbl">Avg / Visit</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">' + commonDx.length + '</div><div class="profile-stat-lbl">Treatments</div></div>';
+
+  /* Visit history */
+  const visitSorted = [...visits].sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||''));
+  qs('patVisitList').innerHTML = visitSorted.map(r => {
+    const paid = r.paid||0;
+    const vBal = (r.grand||0) - paid;
+    return '<div class="pat-visit-item" onclick="loadRx(\'' + r.id + '\')">' +
+      '<div class="pat-visit-rxno">' + (r.rxno||'—') + '</div>' +
+      '<div class="pat-visit-date">' + (r.date||'') + '</div>' +
+      '<div class="pat-visit-dx">' + (r.patientDx||'—') + '</div>' +
+      '<div class="pat-visit-meds" title="' + ((r.medicines||[]).map(m=>m.name).join(', ')) + '">' + (r.medicines||[]).map(m=>m.name).join(', ') + '</div>' +
+      '<div class="pat-visit-amt">₹' + (r.grand||0) + '</div>' +
+      '<div class="pat-visit-paid">' + (vBal>0 ? '<span style="color:var(--red)">₹' + vBal + '</span>' : '<span style="color:var(--teal)">Paid</span>') + '</div>' +
+      '</div>';
+  }).join('');
+
+  /* Load editable info from Firestore */
+  try{
+    const snap = await window._fb.getDoc(window._fb.doc(PAT_COL(), mobile));
+    if(snap.exists()){
+      const d = snap.data();
+      qs('patEditName').value = d.name||'';
+      qs('patEditAge').value = d.age||'';
+      qs('patEditGender').value = d.gender||'';
+      qs('patEditMobile').value = mobile;
+      qs('patEditAddress').value = d.address||'';
+      qs('patEditMedicalHistory').value = d.medicalHistory||'';
+      qs('patEditNotes').value = d.notes||'';
+    }else{
+      /* Pre-fill from latest visit */
+      const latest = visits[0];
+      qs('patEditName').value = latest?.patientName||'';
+      qs('patEditAge').value = latest?.patientAge||'';
+      qs('patEditGender').value = latest?.patientGender||'';
+      qs('patEditMobile').value = mobile;
+      qs('patEditAddress').value = '';
+      qs('patEditMedicalHistory').value = '';
+      qs('patEditNotes').value = '';
+    }
+  }catch(e){
+    console.warn('Patient profile load error:', e);
+  }
+
+  /* Toggle editability */
+  const canEdit = !isStaff();
+  qs('patInfoEditHint').textContent = canEdit ? '✏️ You can edit this information' : 'Only admin / doctor can edit';
+  [qs('patEditName'),qs('patEditAge'),qs('patEditGender'),qs('patEditAddress'),qs('patEditMedicalHistory'),qs('patEditNotes')].forEach(el => {
+    if(el) el.disabled = !canEdit;
+  });
+
+  if(loading) loading.style.display = 'none';
+  if(el) el.style.display = 'block';
+}
+
+function queuePatientSave(){
+  clearTimeout(_patSaveTimer);
+  _patSaveTimer = setTimeout(() => savePatientProfile(), 800);
+}
+
+async function savePatientProfile(){
+  const mobile = _activePatientMobile;
+  if(!mobile) return;
+  const data = {
+    mobile,
+    name: qs('patEditName').value,
+    age: qs('patEditAge').value,
+    gender: qs('patEditGender').value,
+    address: qs('patEditAddress').value,
+    medicalHistory: qs('patEditMedicalHistory').value,
+    notes: qs('patEditNotes').value,
+    updatedAt: new Date().toISOString(),
+    updatedBy: qs('userEmail')?.textContent||''
+  };
+  try{
+    await window._fb.setDoc(window._fb.doc(PAT_COL(), mobile), data, { merge: true });
+    qs('patSaveHint').style.display = 'block';
+    setTimeout(() => { const h=qs('patSaveHint'); if(h) h.style.display='none'; }, 2000);
+  }catch(e){
+    showToast('Failed to save patient info: ' + e.message, 'err');
+  }
+}
+
+function renderNameBasedProfile(visits){
+  if(!visits||!visits.length) return;
+  const loading = qs('patProfileLoading');
+  const el = qs('patProfileContent');
+  if(loading) loading.style.display = 'none';
+  if(el) el.style.display = 'block';
+
+  const totalAmt = visits.reduce((s,r)=>s+(r.grand||0),0);
+  const totalPaid = visits.reduce((s,r)=>s+(r.paid||0),0);
+  const totalRx = visits.length;
+  const commonDx = [...new Set(visits.map(r=>r.patientDx).filter(Boolean))];
+  const bal = totalAmt - totalPaid;
+
+  qs('patProfileName').textContent = (visits[0]?.patientName||'Patient') + ' ⚠️';
+  qs('patProfileMobile').textContent = 'No mobile number — add one to enable profile editing';
+  qs('patProfileMobile').style.color = 'var(--red)';
+  qs('patVisitCount').textContent = totalRx + ' visit(s)';
+
+  qs('patProfileStats').innerHTML =
+    '<div class="profile-stat"><div class="profile-stat-val">' + totalRx + '</div><div class="profile-stat-lbl">Total Visits</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">₹' + totalAmt + '</div><div class="profile-stat-lbl">Total Bill</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">₹' + totalPaid + '</div><div class="profile-stat-lbl">Paid</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val" style="color:' + (bal>0?'var(--red)':'var(--teal-d)') + '">₹' + Math.max(0,bal) + '</div><div class="profile-stat-lbl">Balance</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">' + (totalRx?Math.round(totalAmt/totalRx):0) + '</div><div class="profile-stat-lbl">Avg / Visit</div></div>' +
+    '<div class="profile-stat"><div class="profile-stat-val">' + commonDx.length + '</div><div class="profile-stat-lbl">Treatments</div></div>';
+
+  const visitSorted = [...visits].sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||''));
+  qs('patVisitList').innerHTML = visitSorted.map(r => {
+    const paid = r.paid||0;
+    const vBal = (r.grand||0) - paid;
+    return '<div class="pat-visit-item" onclick="loadRx(\'' + r.id + '\')">' +
+      '<div class="pat-visit-rxno">' + (r.rxno||'—') + '</div>' +
+      '<div class="pat-visit-date">' + (r.date||'') + '</div>' +
+      '<div class="pat-visit-dx">' + (r.patientDx||'—') + '</div>' +
+      '<div class="pat-visit-meds" title="' + ((r.medicines||[]).map(m=>m.name).join(', ')) + '">' + (r.medicines||[]).map(m=>m.name).join(', ') + '</div>' +
+      '<div class="pat-visit-amt">₹' + (r.grand||0) + '</div>' +
+      '<div class="pat-visit-paid">' + (vBal>0 ? '<span style="color:var(--red)">₹' + vBal + '</span>' : '<span style="color:var(--teal)">Paid</span>') + '</div>' +
+      '</div>';
+  }).join('');
+
+  /* Disable all edit fields and show hint */
+  qs('patInfoEditHint').textContent = '⚠️ Add a mobile number to the prescription to enable editing';
+  qs('patInfoEditHint').style.color = 'var(--red)';
+  [qs('patEditName'),qs('patEditAge'),qs('patEditGender'),qs('patEditAddress'),qs('patEditMedicalHistory'),qs('patEditNotes')].forEach(el => {
+    if(el) el.disabled = true;
+  });
+}
+
+/* Auto-update patient profile after Rx save */
+function updatePatientFromRx(rx){
+  const mobile = normalizeMobile(rx.patientContact);
+  if(!mobile) return;
+  window._fb.setDoc(window._fb.doc(PAT_COL(), mobile), {
+    mobile,
+    name: rx.patientName||'',
+    lastVisit: rx.dateISO||'',
+    updatedAt: new Date().toISOString()
+  }, { merge: true }).catch(()=>{});
 }
 
 /* ─── CUSTOMIZABLE TEMPLATES ─── */
@@ -1344,7 +1650,7 @@ async function confirmShare(){
     pdf.save(opt.filename);
     const url='https://wa.me/'+patientPhone+'?text='+encodeURIComponent(msgText);
     window.open(url);
-    showToast('📄 Prescription copied & WhatsApp opened');
+    showToast('📄 PDF downloaded & WhatsApp opened — attach the PDF manually');
   }catch(e){
     showToast('Share failed: '+e.message,'err');
   }finally{
@@ -1791,7 +2097,7 @@ function updateAptBadge(){
   const list=getApts();
   const cnt=list.filter(a=>a.date===today).length;
   badge.textContent=cnt;
-  badge.style.display=cnt?'inline':'none';
+  badge.style.display='inline';
   updateNotifBadge();
 }
 
@@ -2050,6 +2356,131 @@ async function saveFupNote(){
   }catch(e){showToast('Failed to save: '+e.message,'err');}
 }
 
+/* ─── X-RAY / SCAN UPLOAD ─── */
+let _xrayRxId = null;
+
+function resizeImage(file, maxDim, quality, cb) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const img = new Image();
+    img.onload = function () {
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      cb(c.toDataURL('image/jpeg', quality));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function xraySizeWarning(dataUrl) {
+  const bytes = atob(dataUrl.split(',')[1]).length;
+  if (bytes > 600 * 1024) showToast('X-ray is large (' + (bytes/1024).toFixed(0) + ' KB). It may fail if too many are added.', 'warn');
+}
+
+function handleXrayUpload(ev) {
+  const file = ev.target.files?.[0];
+  if (!file || !_xrayRxId) return;
+  if (file.size > 20 * 1024 * 1024) { showToast('File too large (max 20MB)', 'err'); ev.target.value = ''; return; }
+  const prog = qs('xrayProgress');
+  prog.style.display = 'block'; prog.textContent = 'Compressing…';
+  resizeImage(file, 800, 0.7, async function (dataUrl) {
+    xraySizeWarning(dataUrl);
+    try {
+      const rx = _histCache.find(r => r.id === _xrayRxId);
+      if (!rx) { showToast('Prescription not found', 'err'); prog.style.display = 'none'; ev.target.value = ''; return; }
+      const fileId = Date.now();
+      const entry = { id: fileId, url: dataUrl, name: file.name, uploadedAt: new Date().toISOString(), uploadedBy: qs('userEmail').textContent };
+      const xrays = [...(rx.xrays || []), entry];
+      prog.textContent = 'Saving to Firestore…';
+      await window._fb.updateDoc(window._fb.doc(RX_COL(), _xrayRxId), { xrays });
+      rx.xrays = xrays;
+      showToast('✅ X-ray saved');
+      renderXrayGallery();
+    } catch (e) {
+      showToast('Save failed: ' + (e.message || 'Firestore error'), 'err');
+      console.error('X-ray save error:', e);
+    }
+    prog.style.display = 'none';
+    ev.target.value = '';
+  });
+}
+
+function renderXrayGallery() {
+  const el = qs('xrayGallery');
+  const cnt = qs('xrayCount');
+  if (!el || !_xrayRxId) return;
+  const rx = _histCache.find(r => r.id === _xrayRxId);
+  if (!rx) { el.innerHTML = ''; if (cnt) cnt.textContent = '0'; return; }
+  const xrays = rx.xrays || [];
+  if (cnt) cnt.textContent = xrays.length + ' file(s)';
+  if (!xrays.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No X-rays uploaded yet</div>';
+    return;
+  }
+  el.innerHTML = xrays.map(x => {
+    const isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(x.name);
+    return '<div class="xray-item">' +
+      (isImg
+        ? '<img src="' + x.url + '" alt="' + x.name.replace(/"/g,'&quot;') + '" class="xray-thumb" onclick="window.open(\'' + x.url + '\',\'_blank\')" onerror="this.outerHTML=\'<div class=\\\'xray-thumb xray-thumb-fallback\\\' onclick=\\\'window.open(\\\'' + x.url + '\\\',\\\'_blank\\\')\\\'>📄</div>\'"/>'
+        : '<div class="xray-thumb xray-thumb-fallback" onclick="window.open(\'' + x.url + '\',\'_blank\')">📄</div>'
+      ) +
+      '<div class="xray-info">' +
+      '<div class="xray-name" title="' + x.name.replace(/"/g,'&quot;') + '">' + x.name.replace(/"/g,'&quot;') + '</div>' +
+      '<div class="xray-meta">' + new Date(x.uploadedAt).toLocaleDateString('en-IN') + ' by ' + (x.uploadedBy||'—') + '</div>' +
+      '</div>' +
+      '<div class="xray-actions">' +
+      '<button class="btn-sm" onclick="shareXray(\'' + _xrayRxId + '\',' + x.id + ')" title="Share via WhatsApp">📤</button>' +
+      (!isStaff() ? '<button class="btn-sm" onclick="deleteXray(' + x.id + ')" style="color:var(--red)" title="Delete">🗑️</button>' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+async function deleteXray(xrayId) {
+  if (!_xrayRxId || !confirm('Remove this X-ray?')) return;
+  const rx = _histCache.find(r => r.id === _xrayRxId);
+  if (!rx || !rx.xrays) return;
+  const xrays = rx.xrays.filter(x => x.id !== xrayId);
+  try {
+    await window._fb.updateDoc(window._fb.doc(RX_COL(), _xrayRxId), { xrays });
+    rx.xrays = xrays;
+    showToast('X-ray removed');
+    renderXrayGallery();
+  } catch (e) { showToast('Failed to remove: ' + e.message, 'err'); }
+}
+
+function shareXray(rxId, xrayId) {
+  const rx = _histCache.find(r => r.id === rxId);
+  if (!rx || !rx.xrays) return;
+  const xray = rx.xrays.find(x => x.id === xrayId);
+  if (!xray) return;
+  const phone = (rx.patientContact||'').replace(/[^\d]/g,'') || '918122835737';
+  const msgText = '🦷 SAI DENTAL CLINIC\nX-ray for ' + (rx.patientName||'Patient') + ' (' + (xray.name||'') + ')\n\n📎 Attach the downloaded image above';
+  copyToClipboard(msgText);
+  const a = document.createElement('a');
+  a.href = xray.url;
+  a.download = xray.name || 'xray.jpg';
+  a.click();
+  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msgText), 'sai_wa_share');
+}
+function dataUrlToBlob(dataUrl) {
+  try {
+    const parts = dataUrl.split(',');
+    const mime = parts[0].match(/:(.*?);/)[1];
+    const bytes = atob(parts[1]);
+    const buf = new ArrayBuffer(bytes.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) view[i] = bytes.charCodeAt(i);
+    return new Blob([buf], { type: mime });
+  } catch(e) { return null; }
+}
+
 /* ═══ INIT ═══ */
 waitFB(()=>{
   window._fb.onAuthStateChanged(window._auth, async user=>{
@@ -2068,24 +2499,34 @@ waitFB(()=>{
       roleBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;margin-left:6px';
       roleBadge.style.background = isStaff() ? '#f59e0b' : 'var(--teal)';
       roleBadge.style.color = '#fff';
-      roleBadge.textContent = isStaff() ? 'STAFF' : 'ADMIN';
+      roleBadge.textContent = isStaff() ? 'STAFF' : 'DOCTOR';
       const existingBadge = document.getElementById('roleBadge');
       if (existingBadge) existingBadge.remove();
       qs('userEmail').after(roleBadge);
 
       applyRoleUI();
+      updateBackBtn();
 
       updateNet();
       qs('todayDate').textContent=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
       qs('notes').value='Avoid hot food for 24 hrs. Rinse with warm salt water twice daily. Take medicines after food.';
       qs('followup').value='After 5 days';
       addRow({});
+      /* Init X-ray card in readonly (pre-save) state */
+      _xrayRxId=null;
+      const initXc=qs('xrayCard');
+      if(initXc){initXc.style.display='block';initXc.dataset.readonly='1';}
+      const initXg=qs('xrayGallery');
+      if(initXg)initXg.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px 0">💡 Save this prescription first to enable X-ray uploads</div>';
+      const initXu=qs('xrayUploadBtn');
+      if(initXu)initXu.style.display='none';
       try{
         const c=await getSetting('rxCounter')||0;
         qs('rxNo').textContent='RX-'+String(c+1).padStart(4,'0');
       }catch(e){}
       await loadHist();
       applyRoleUI(); /* refresh follow-up badge after history loads */
+      updateBackBtn();
       if(isStaff())setTimeout(()=>showFupNotification(),500);
       restoreDraft();
       populateDoctorSelect();

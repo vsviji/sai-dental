@@ -45,6 +45,8 @@ body{font-family: 'DM Sans', system-ui, -apple-system, sans-serif;background:var
 .user-avatar{width:22px;height:22px;border-radius:50%;background:var(--teal);color:#fff;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
 .btn-logout{background:none;border:none;color:var(--red);cursor:pointer;font-size:11px;font-family:'DM Sans',sans-serif;padding:0;font-weight:500}
 .btn-logout:hover{text-decoration:underline}
+.back-btn{background:none;border:1px solid var(--border);color:var(--teal);font-size:18px;cursor:pointer;padding:2px 10px;border-radius:var(--r);line-height:1.4;transition:all .2s;display:flex;align-items:center;font-family:'DM Sans',sans-serif}
+.back-btn:hover{background:var(--teal-l);border-color:var(--teal-m);color:var(--teal-d)}
 .notif-bell{background:none;border:none;font-size:20px;cursor:pointer;position:relative;padding:4px;border-radius:8px;transition:background .2s;line-height:1}
 .notif-bell:hover{background:var(--teal-l)}
 .notif-count{position:absolute;top:-2px;right:-4px;background:var(--red);color:#fff;font-size:9px;font-weight:600;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--surface)}
@@ -160,9 +162,10 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .btn-export:hover{background:var(--gold-l)}
 
 /* ── HISTORY ── */
-.hist-toolbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
-.hist-search{flex:1;min-width:200px;max-width:320px}
-.hist-filter,.hist-sort{min-width:150px}
+.hist-toolbar{display:flex;gap:8px;margin-bottom:16px;align-items:center}
+.hist-search{flex:1;min-width:140px;max-width:260px}
+.hist-filter{min-width:120px;max-width:160px}
+.hist-sort{min-width:100px;max-width:150px}
 .hist-item{border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;transition:all .2s;background:var(--surface);display:flex;flex-wrap:wrap;align-items:flex-start}
 .hist-item:hover{border-color:var(--teal-m);background:var(--teal-l)}
 .hist-main{flex:1;min-width:200px;cursor:pointer}
@@ -225,7 +228,8 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 @media print{
   body{background:#fff}
   .topnav,.tabs,.action-bar,.tbl-foot,.btn-del,.no-print,
-  #histTab,.sync-bar,.offline-banner,.login-overlay,.pwa-banner{display:none!important}
+  #histTab,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
+  #xrayCard,.bill-pay-actions{display:none!important}
   .app{padding:0;max-width:100%}
   .card,.clinic-card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
   .billing-grid{grid-template-columns:1fr 340px}
@@ -437,8 +441,41 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 .fup-loaded{padding:10px 12px;background:var(--gold-l);border:1px solid var(--gold);border-radius:var(--r);font-size:12px}
 .fup-loaded-note{padding:3px 0}
 .fup-status-tag{display:inline-block;margin-top:6px;font-size:11px;font-weight:500}
+/* ── X-RAY / SCANS ── */
+.xray-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.xray-item:last-child{border-bottom:none}
+.xray-thumb{width:56px;height:56px;border-radius:var(--r);object-fit:cover;border:1px solid var(--border);cursor:pointer;flex-shrink:0;background:var(--surf2);transition:opacity .2s}
+.xray-thumb:hover{opacity:.85}
+.xray-thumb-fallback{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--teal);background:var(--teal-l)}
+.xray-info{flex:1;min-width:0}
+.xray-name{font-size:13px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xray-meta{font-size:11px;color:var(--muted);margin-top:1px}
+.xray-actions{display:flex;gap:4px;flex-shrink:0}
+
 .btn-sm{padding:4px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--ink);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .15s}
 .btn-sm:hover{background:var(--surf2)}
+
+/* ─── PATIENT MANAGEMENT ─── */
+.pat-item{display:flex;align-items:center;gap:14px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;cursor:pointer;transition:all .2s;background:var(--surface)}
+.pat-item:hover{background:var(--teal-l);border-color:var(--teal-m)}
+.pat-avatar{width:40px;height:40px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:17px;font-weight:600;flex-shrink:0}
+.pat-info{flex:1;min-width:0}
+.pat-name{font-size:14px;font-weight:600;color:var(--ink)}
+.pat-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.pat-stats{display:flex;gap:16px;font-size:12px;color:var(--muted);flex-shrink:0}
+.pat-stat-val{font-weight:600;color:var(--teal-d)}
+#patProfileStats .profile-stat{background:var(--surf2);padding:12px 10px}
+#patProfileStats .profile-stat-val{font-size:18px}
+#patProfileStats .profile-stat-lbl{font-size:9px}
+.pat-empty{padding:32px;text-align:center;color:var(--muted);font-size:13px}
+.pat-visit-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;cursor:pointer;transition:all .2s}
+.pat-visit-item:hover{background:var(--teal-l);border-color:var(--teal-m)}
+.pat-visit-rxno{font-size:12px;font-weight:500;color:var(--teal);min-width:80px}
+.pat-visit-date{font-size:11px;color:var(--muted);min-width:80px}
+.pat-visit-dx{flex:1;font-size:12px;color:var(--ink)}
+.pat-visit-meds{font-size:11px;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pat-visit-amt{font-size:13px;font-weight:600;color:var(--teal-d);min-width:60px;text-align:right}
+.pat-visit-paid{font-size:11px;color:var(--muted);min-width:50px;text-align:right}
 
 /* ── RESPONSIVE TWEAKS ── */
 @media(max-width:620px){
@@ -453,6 +490,10 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 .apt-cal-grid{grid-template-columns:repeat(7,1fr)}
   .modal-card-wide{width:100%}
   .profile-stats{grid-template-columns:repeat(2,1fr)}
+  .pat-stats{display:none}
+  .pat-visit-meds{display:none}
+  .pat-visit-amt{min-width:auto}
+  .pat-visit-paid{display:none}
   .dental-grid{grid-template-columns:repeat(4,1fr)}
   .clinic-meta-strip{grid-template-columns:1fr}
   .sync-bar .sync-stats{width:100%;order:2}

@@ -14,6 +14,7 @@ import { initializeFirestore, collection, doc, setDoc,
          persistentLocalCache, persistentSingleTabManager }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
+
 const firebaseConfig = {
   apiKey:            "AIzaSyDmUdxMkrMKgIn0v6p5Hr8dbVtXeJ_KPpw",
   authDomain:        "saidentalclinic-4e0de.firebaseapp.com",
@@ -43,3 +44,4 @@ window._fb = {
 /* Collection helpers */
 window._rxCol   = () => collection(db, 'prescriptions');
 window._fupCol  = () => collection(db, 'followups');
+window._patCol  = () => collection(db, 'patients');
