@@ -176,11 +176,16 @@ function todayIso(){return new Date().toISOString().slice(0,10)}
 function getPdfElement(){
   const orig=qs('rxTab');
   if(!orig)return null;
+  const livePaid=qs('bPaid')?.textContent||'₹0';
+  const liveBal=qs('bBalance')?.textContent||'₹0';
+  const liveBillDisplay=qs('billPaySection')?.style.display||'none';
   const clone=orig.cloneNode(true);
   clone.id='rxTabPdfClone';
-  clone.style.cssText='position:fixed;top:0;left:0;z-index:-1;pointer-events:none;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
+  clone.style.cssText='position:absolute;top:0;left:0;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
   document.body.classList.add('pdf-mode');
   clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions,#xrayCard').forEach(el=>el.remove());
+  const cBill=clone.querySelector('#billPaySection');
+  if(cBill){cBill.style.display=liveBillDisplay;const cp=cBill.querySelector('#bPaid');if(cp)cp.textContent=livePaid;const cb=cBill.querySelector('#bBalance');if(cb)cb.textContent=liveBal;}
   clone.querySelectorAll('input:not([type="hidden"]),select,textarea').forEach(el=>{
     const d=document.createElement('div');
     d.style.cssText='padding:2px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
@@ -272,8 +277,8 @@ function renderRows(){
       <td><select style="width:100%" onchange="rc(${r.id},'dur',this.value)">${listOpts(DURS,r.dur)}</select></td>
       <td><input type="number" value="${r.qty}" min="1" max="999" style="width:58px" oninput="rc(${r.id},'qty',+this.value);renderRows()"/></td>
       <td><input type="number" value="${r.rate}" min="0" step="0.5" style="width:70px" oninput="rc(${r.id},'rate',+this.value);renderRows()"/></td>
-      <td class="amt-cell">${fmt(r.qty*r.rate)}</td>
       <td><select style="width:100%" onchange="rc(${r.id},'inst',this.value)">${listOpts(INSTS,r.inst)}</select></td>
+      <td class="amt-cell">${fmt(r.qty*r.rate)}</td>
       <td><button class="btn-del" onclick="delRow(${r.id})" title="Remove">✕</button></td>
     </tr>`).join('');
   qs('medCount').textContent=rows.length+' item(s)';
@@ -485,7 +490,7 @@ function renderHistPage(list){
   }
   el.innerHTML=slice.map(r=>`
     <div class="hist-item">
-      <div onclick="loadRx('${r.id}')" class="hist-main">
+      <div onclick="duplicateRx('${r.id}')" class="hist-main">
       <div class="hi-name">${r.patientName||'—'} <span class="hi-amt">₹${r.grand}</span>
         <span class="hi-badge">${r.rxno||''}</span>
         <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
@@ -764,8 +769,9 @@ async function clearAll(){
 function newRxForm(){
   if(_editingRxId){_editingRxId=null;qs('btnSaveLabel').textContent='Save Prescription';}
   rows=[];rid=0;renderRows();
-  ['pName','pAge','pContact','pBP','pRef','notes','followup'].forEach(id=>qs(id).value='');
+  ['pName','pAge','pContact','pBP','pRef','notes'].forEach(id=>qs(id).value='');
   ['pGender','pDx'].forEach(id=>qs(id).value='');
+  qs('followup').value='After 5 days';
   qs('pAllergy').value='';
   _payRxId=null;
   _xrayRxId=null;
@@ -1072,11 +1078,11 @@ function updateBillPay(rx){
 function payStatusBadge(rx){
   const s=rx.paymentStatus||'pending';
   const paid=rx.paid||0;
-  if(paid>=rx.grand&&rx.grand>0)return '<span class="pay-badge pay-paid">✅ Paid</span>';
-  if(paid>0)return '<span class="pay-badge pay-partial">🟡 Partial ₹'+paid+'</span>';
-  return '<span class="pay-badge pay-pending">🔴 Pending</span>';
+  if(paid>=rx.grand&&rx.grand>0)return '<span class="pay-badge pay-paid">Paid</span>';
+  if(paid>0)return '<span class="pay-badge pay-partial">Partial Rs.'+paid+'</span>';
+  return '<span class="pay-badge pay-pending">Pending</span>';
 }
-async function sharePaidPrescriptionPdf(rx){
+function sharePaidPrescriptionPdf(rx){
   const name=rx.patientName||'Patient';
   const rxno=rx.rxno||'RX-—';
   const phone=rx.patientContact?rx.patientContact.replace(/[^\d]/g,''):'918122835737';
@@ -1090,39 +1096,10 @@ async function sharePaidPrescriptionPdf(rx){
     const days=calcFollowupDays(fupText);
     if(days){const dt=new Date();dt.setDate(dt.getDate()+days);fupDateStr=' ('+dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+')';}
   }
-  const msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno+'\n🏥 Diagnosis: '+dx+'\n💊 Medicines: '+meds+'\n💰 Amount: ₹'+rx.grand+' | Paid: ₹'+(rx.paid||0)+(fupText?'\n📅 Next visit: '+fupText+fupDateStr:'');
+  const msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno+'\n🏥 Diagnosis: '+dx+'\n💊 Medicines: '+meds+'\n💰 Amount: Rs.'+rx.grand+' | Paid: Rs.'+(rx.paid||0)+(fupText?'\n📅 Next visit: '+fupText+fupDateStr:'');
   copyToClipboard(msgText);
-  const el=getPdfElement();
-  if(!el)return;
-  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library not loaded','warn');return;}
-  const opt={
-    margin:8,
-    filename:rxno+'_'+name.replace(/\s+/g,'_')+'_receipt.pdf',
-    image:{type:'jpeg',quality:0.98},
-    html2canvas:{scale:2,useCORS:true,letterRendering:true},
-    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
-  };
-  const isMobile=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  try{
-    const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
-    const text=msgText;
-    if(isMobile&&navigator.canShare){
-      const blob=pdf.output('blob');
-      const file=new File([blob],opt.filename,{type:'application/pdf'});
-      await navigator.share({title:'Receipt - '+name,text:text,files:[file]});
-      showToast('✅ Receipt shared');
-    }else{
-      pdf.save(opt.filename);
-      const url='https://wa.me/'+phone+'?text='+encodeURIComponent(msgText);
-      window.open(url);
-      showToast('📄 Prescription copied & WhatsApp opened');
-    }
-  }catch(e){
-    if(e.name!=='AbortError')showToast('Could not share PDF: '+e.message,'err');
-  }finally{
-    if(el)el.remove();
-    document.body.classList.remove('pdf-mode');
-  }
+  showToast('Text copied — use Print (Save as PDF) and attach in WhatsApp');
+  printRx();
 }
 function printReceipt(){
   const rx=_histCache.find(r=>r.id===_payRxId);
@@ -1574,27 +1551,8 @@ function clearDentalChart(){
 }
 
 /* ─── PDF GENERATION ─── */
-async function genPDF(){
-  const name=qs('pName').value.trim()||'Patient';
-  const rxno=qs('rxNo').textContent;
-  document.title=rxno+' — '+name+' — Sai Dental';
-  const el=getPdfElement();
-  if(!el)return;
-  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library loading, try again','warn');return;}
-  const opt={
-    margin:8,
-    filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
-    image:{type:'jpeg',quality:0.98},
-    html2canvas:{scale:2,useCORS:true,letterRendering:true},
-    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
-  };
-  try{
-    await html2pdf().set(opt).from(el).save();
-    showToast('PDF generated: '+rxno);
-  }finally{
-    el.remove();
-    document.body.classList.remove('pdf-mode');
-  }
+function genPDF(){
+  printRx();
 }
 
 /* ─── SHARE ─── */
@@ -1616,12 +1574,12 @@ function shareRx(){
   qs('shareModal').style.display='flex';
 }
 
-async function confirmShare(){
+function confirmShare(){
   const name=qs('pName').value.trim();
   const rxno=qs('rxNo').textContent;
   const followupText=qs('followup').value.trim();
   closeModal(null,'shareModal');
-  const patientPhone=qs('pContact').value?.replace(/[^\d]/g,'')||'918122835737';
+  if(_payRxId){const rx=_histCache.find(r=>r.id===_payRxId);if(rx)updateBillPay(rx);}
   const docName=(getDoctors()[0]||{}).name||'Dr. S. K. Srinivas';
   const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
   let fupDateStr='';
@@ -1629,34 +1587,18 @@ async function confirmShare(){
     const days=calcFollowupDays(followupText);
     if(days){const dt=new Date();dt.setDate(dt.getDate()+days);fupDateStr=' ('+dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+')';}
   }
-  const msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno+(followupText?'\n📅 Next visit: '+followupText+fupDateStr:'');
+  const dx=qs('pDx')?.value||'';
+  const medList=rows.map(r=>r.name).filter(Boolean).join(', ').slice(0,200);
+  let msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno;
+  if(dx)msgText+='\n🏥 Treatment: '+dx;
+  if(medList)msgText+='\n💊 Medicines: '+medList;
+  if(followupText)msgText+='\n📅 Next visit: '+followupText+fupDateStr;
   copyToClipboard(msgText);
-  showToast('Generating PDF…');
   if(followupText&&qs('shareCreateApt').checked){
     createApptFromFollowup(name,followupText);
   }
-  const el=getPdfElement();
-  if(!el){showToast('Could not generate PDF view','err');return;}
-  if(typeof html2pdf==='undefined'){el.remove();document.body.classList.remove('pdf-mode');showToast('PDF library loading, try again','warn');return;}
-  const opt={
-    margin:8,
-    filename:rxno+'_'+name.replace(/\s+/g,'_')+'.pdf',
-    image:{type:'jpeg',quality:0.98},
-    html2canvas:{scale:2,useCORS:true,letterRendering:true},
-    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
-  };
-  try{
-    const pdf=await html2pdf().set(opt).from(el).toPdf().get('pdf');
-    pdf.save(opt.filename);
-    const url='https://wa.me/'+patientPhone+'?text='+encodeURIComponent(msgText);
-    window.open(url);
-    showToast('📄 PDF downloaded & WhatsApp opened — attach the PDF manually');
-  }catch(e){
-    showToast('Share failed: '+e.message,'err');
-  }finally{
-    if(el)el.remove();
-    document.body.classList.remove('pdf-mode');
-  }
+  showToast('Text copied — use Print (Save as PDF) and attach in WhatsApp');
+  printRx();
 }
 
 function createApptFromFollowup(name,followupText){
@@ -1675,7 +1617,7 @@ function createApptFromFollowup(name,followupText){
   list.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.time||'').localeCompare(b.time||''));
   saveApts(list);
   renderApts();
-  showToast('📅 Appointment added to calendar for '+aptDate);
+  showToast('Appointment added to calendar for '+aptDate);
 }
 
 /* ─── DASHBOARD ─── */
@@ -2467,7 +2409,7 @@ function shareXray(rxId, xrayId) {
   a.href = xray.url;
   a.download = xray.name || 'xray.jpg';
   a.click();
-  window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(msgText), 'sai_wa_share');
+  showToast('Image downloaded & text copied — paste in WhatsApp');
 }
 function dataUrlToBlob(dataUrl) {
   try {

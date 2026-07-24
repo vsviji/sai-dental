@@ -229,7 +229,8 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   body{background:#fff}
   .topnav,.tabs,.action-bar,.tbl-foot,.btn-del,.no-print,
   #histTab,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
-  #xrayCard,.bill-pay-actions{display:none!important}
+   #xrayCard,.bill-pay-actions,.toast,.pat-search-wrap,
+   #patSearchWrap,[onclick*="togglePatSearch"]{display:none!important}
   .app{padding:0;max-width:100%}
   .card,.clinic-card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
   .billing-grid{grid-template-columns:1fr 340px}
@@ -238,8 +239,14 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   .doc-strip{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#E1F5EE!important}
   .bill-grand{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#0F6E56!important}
   .tbl-scroll{overflow:visible!important}
-  table{min-width:unset!important;width:100%!important}
-  th,td{font-size:10px!important;padding:4px!important;white-space:normal!important}
+  table{min-width:unset!important;width:100%!important;table-layout:auto!important}
+  th,td{font-size:10px!important;padding:3px 4px!important;white-space:normal!important}
+  th:nth-child(4),td:nth-child(4){width:14%!important}
+  th:nth-child(2),td:nth-child(2){width:16%!important}
+  th:nth-child(8),td:nth-child(8){width:16%!important}
+  th:nth-child(3),td:nth-child(3),th:nth-child(5),td:nth-child(5){width:8%!important}
+  th:nth-child(6),td:nth-child(6),th:nth-child(7),td:nth-child(7){width:7%!important}
+  th:nth-child(9),td:nth-child(9){width:8%!important}
   body{zoom:.8}
 }
 body.pdf-mode [id^="rxTab"] .action-bar,
