@@ -180,6 +180,7 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .pay-partial{background:#fef3c7;color:#92400e}
 .pay-pending{background:#fee2e2;color:#991b1b}
 .hi-badge{display:inline-block;background:var(--teal-l);color:var(--teal);font-size:10px;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:500}
+.hi-xray{cursor:help;opacity:.8}
 .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
 .empty-state p{font-size:14px}
 .hist-hover-actions{display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .2s}
@@ -229,7 +230,7 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   body{background:#fff}
   .topnav,.tabs,.action-bar,.tbl-foot,.btn-del,.no-print,
   #histTab,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
-   #xrayCard,.bill-pay-actions,.toast,.pat-search-wrap,
+   .bill-pay-actions,.toast,.pat-search-wrap,
    #patSearchWrap,[onclick*="togglePatSearch"]{display:none!important}
   .app{padding:0;max-width:100%}
   .card,.clinic-card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
@@ -248,6 +249,15 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
   th:nth-child(6),td:nth-child(6),th:nth-child(7),td:nth-child(7){width:7%!important}
   th:nth-child(9),td:nth-child(9){width:8%!important}
   body{zoom:.8}
+  #xrayCard{page-break-before:always;break-inside:auto;margin-top:20px}
+  #xrayCard .xray-item{flex-direction:column;align-items:flex-start;gap:6px;padding:16px 0;border-bottom:1px solid #ddd;break-inside:avoid}
+  #xrayCard .xray-thumb{width:100%;height:auto;max-width:500px;object-fit:contain;border:1px solid #ddd;cursor:default}
+  #xrayCard .xray-thumb:hover{opacity:1}
+  #xrayCard .xray-thumb-fallback{width:100%;max-width:500px;height:200px;font-size:40px}
+  #xrayCard .xray-info{padding:0}
+  #xrayCard .xray-name{font-size:11px;white-space:normal}
+  #xrayCard .xray-meta{font-size:10px}
+  #xrayCard .xray-actions,#xrayCard #xrayUploadArea{display:none!important}
 }
 body.pdf-mode [id^="rxTab"] .action-bar,
 body.pdf-mode [id^="rxTab"] .tbl-foot,
@@ -503,10 +513,12 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
   .pat-visit-paid{display:none}
   .dental-grid{grid-template-columns:repeat(4,1fr)}
   .clinic-meta-strip{grid-template-columns:1fr}
+  table{min-width:unset}
   .sync-bar .sync-stats{width:100%;order:2}
   .user-pill{margin-left:0}
-  .action-bar{gap:6px}
-  .action-bar .btn-save,.action-bar .btn-print,.action-bar .btn-clr,.action-bar .btn-export{flex:1;justify-content:center;padding:8px 8px;font-size:11px;text-align:center}
+  .action-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .action-bar > div{grid-column:1/-1}
+  .action-bar .btn-save,.action-bar .btn-print,.action-bar .btn-clr,.action-bar .btn-export{width:100%;justify-content:center;padding:8px 8px;font-size:11px;text-align:center}
   .toast{right:12px;left:12px;max-width:unset;bottom:12px;text-align:center}
 }
 

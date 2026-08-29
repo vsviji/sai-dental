@@ -183,7 +183,7 @@ function getPdfElement(){
   clone.id='rxTabPdfClone';
   clone.style.cssText='position:absolute;top:0;left:0;width:210mm;background:#fff;color:#1a1a1a;padding:0;font-family:"DM Sans",sans-serif';
   document.body.classList.add('pdf-mode');
-  clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions,#xrayCard').forEach(el=>el.remove());
+  clone.querySelectorAll('.action-bar,.tbl-foot,.btn-del,.no-print,#tplBtns,#patSearchWrap,.pat-search-wrap,.bill-pay-actions').forEach(el=>el.remove());
   const cBill=clone.querySelector('#billPaySection');
   if(cBill){cBill.style.display=liveBillDisplay;const cp=cBill.querySelector('#bPaid');if(cp)cp.textContent=livePaid;const cb=cBill.querySelector('#bBalance');if(cb)cb.textContent=liveBal;}
   clone.querySelectorAll('input:not([type="hidden"]),select,textarea').forEach(el=>{
@@ -508,7 +508,7 @@ function renderHistPage(list){
       </div>
       <div class="hist-extra-actions">
         <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
-        <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
+        ${(r.xrays||[]).length?'<span class="hi-xray" title="X-ray attached">📷</span> ':''}<button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
     </div>`).join('');
   if(pages<=1){pg.innerHTML='';return;}
@@ -1582,22 +1582,20 @@ function confirmShare(){
   if(_payRxId){const rx=_histCache.find(r=>r.id===_payRxId);if(rx)updateBillPay(rx);}
   const docName=(getDoctors()[0]||{}).name||'Dr. S. K. Srinivas';
   const dateStr=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  const phone=(qs('pContact').value||'').replace(/[^\d]/g,'')||'918122835737';
   let fupDateStr='';
   if(followupText){
     const days=calcFollowupDays(followupText);
     if(days){const dt=new Date();dt.setDate(dt.getDate()+days);fupDateStr=' ('+dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})+')';}
   }
-  const dx=qs('pDx')?.value||'';
-  const medList=rows.map(r=>r.name).filter(Boolean).join(', ').slice(0,200);
   let msgText='🦷 SAI DENTAL CLINIC\nPrescribed by '+docName+' on '+dateStr+'\n\n👤 Patient: '+name+'\n📋 Rx: '+rxno;
-  if(dx)msgText+='\n🏥 Treatment: '+dx;
-  if(medList)msgText+='\n💊 Medicines: '+medList;
   if(followupText)msgText+='\n📅 Next visit: '+followupText+fupDateStr;
   copyToClipboard(msgText);
   if(followupText&&qs('shareCreateApt').checked){
     createApptFromFollowup(name,followupText);
   }
-  showToast('Text copied — use Print (Save as PDF) and attach in WhatsApp');
+  window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msgText),'_blank');
+  showToast('Sent to WhatsApp');
   printRx();
 }
 
