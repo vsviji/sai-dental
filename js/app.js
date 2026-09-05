@@ -43,6 +43,7 @@ const RX_COL   = () => window._rxCol();
 const SETT_COL = () => window._fb.collection(window._db,'settings');
 const FUP_COL  = () => window._fupCol();
 const PAT_COL  = () => window._patCol();
+const TOKEN_COL = () => window._tokenCol();
 
 async function getAllRx(){
   const snap = await window._fb.getDocs(
@@ -103,6 +104,287 @@ async function getUserRole(email) {
 
 function isAdmin() { return _currentRole === 'admin'; }
 function isStaff() { return _currentRole === 'staff'; }
+
+/* ═══ TOKEN REGISTRATION ═══ */
+let _tokenUnsubscribe = null;
+let _tokenCache = [];
+let _allTokenCache = [];
+let _tokenDateKey = tokenDateKey();
+let _activeTokenId = null;
+const TOKEN_FEE = 200;
+
+function tokenDateKey(date=new Date()) {
+  return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
+}
+function tokenDateLabel(dateKey=tokenDateKey()) {
+  const parts=dateKey.split('-').map(Number);
+  const date=parts.length===3?new Date(parts[0],parts[1]-1,parts[2]):new Date();
+  return date.toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
+}
+function escapeTokenHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+}
+
+function startTokenListener() {
+  if (_tokenUnsubscribe) _tokenUnsubscribe();
+  const q = window._fb.query(TOKEN_COL());
+  _tokenUnsubscribe = window._fb.onSnapshot(q, snap => {
+    _allTokenCache = snap.docs.map(d => ({...d.data(), id:d.id}));
+    _tokenCache = _allTokenCache.filter(t => t.dateKey === _tokenDateKey)
+      .sort((a,b) => (a.tokenNumber||0) - (b.tokenNumber||0));
+    renderTokens();
+  }, e => {
+    const status = qs('tokenSyncStatus');
+    if (status) status.textContent = 'Unable to sync tokens';
+    console.warn('Token listener error:', e.message);
+  });
+  const date = qs('tokenToday');
+  if (date) date.textContent = 'Today: '+tokenDateLabel();
+  const picker = qs('tokenDatePicker');
+  if (picker) picker.value = _tokenDateKey;
+}
+
+function changeTokenDate(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+  _tokenDateKey = dateKey;
+  _tokenCache = _allTokenCache.filter(t => t.dateKey === dateKey)
+    .sort((a,b) => (a.tokenNumber||0) - (b.tokenNumber||0));
+  const date = qs('tokenToday');
+  if (date) date.textContent = tokenDateLabel(dateKey);
+  const label = qs('tokenListDate');
+  if (label) label.textContent = dateKey === tokenDateKey() ? 'Today' : tokenDateLabel(dateKey);
+  renderTokens();
+}
+
+function setExportMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  const [year, mon] = month.split('-').map(Number);
+  const lastDay = new Date(year, mon, 0).getDate();
+  qs('tokenExportFrom').value = month+'-01';
+  qs('tokenExportTo').value = month+'-'+String(lastDay).padStart(2,'0');
+}
+
+function exportTokensExcel() {
+  let from = qs('tokenExportFrom').value;
+  let to = qs('tokenExportTo').value;
+  const month = qs('tokenExportMonth').value;
+  if (month) { setExportMonth(month); from=qs('tokenExportFrom').value; to=qs('tokenExportTo').value; }
+  if (from && to && from > to) { showToast('From date must be before To date','err'); return; }
+  const tokens = _allTokenCache.filter(t => (!from || t.dateKey >= from) && (!to || t.dateKey <= to));
+  if (!tokens.length) { showToast('No tokens found for this period','warn'); return; }
+  const rows = tokens.sort((a,b)=>(a.dateKey||'').localeCompare(b.dateKey||'')||(a.tokenNumber||0)-(b.tokenNumber||0)).map(t => {
+    const rx = _histCache.find(r => r.tokenId === t.id);
+    const treatmentFee = rx?.treatmentFee || 0;
+    const medicineSubtotal = rx ? Math.max(0,(rx.grand||0)-treatmentFee) : 0;
+    return {
+      'Token Date':t.dateKey||'', 'Token Number':t.tokenNumber||'', 'Patient Name':t.patientName||'',
+      'Contact':t.patientContact||'', 'Age':t.patientAge||'', 'Gender':t.patientGender||'',
+      'Blood Pressure':t.bloodPressure||'', 'Allergies':t.allergies||'', 'Medication / Past History':t.medicationHistory||'',
+      'Consultation Fee':t.fee||200, 'Payment Method':t.paymentMethod||'', 'Payment Status':t.paymentStatus||'',
+      'Token Status':t.status||'', 'Receipt Number':t.receiptNumber||'', 'Registered By':t.createdBy||'',
+      'Prescription':rx?'Yes':'No', 'Diagnosis':rx?.patientDx||'', 'Treatment Fee':treatmentFee,
+      'Medicine Subtotal':medicineSubtotal, 'Grand Total':rx?.grand||t.fee||200,
+      'Prescription Medicines':rx?(rx.medicines||[]).map(m=>m.name).filter(Boolean).join(', '):''
+    };
+  });
+  if (typeof XLSX === 'undefined') { showToast('Excel export library is not loaded','err'); return; }
+  const sheet = XLSX.utils.json_to_sheet(rows);
+  sheet['!cols'] = Object.keys(rows[0]).map(key => ({wch:Math.min(28,Math.max(12,key.length+2))}));
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Token Details');
+  const suffix = from && to ? from+'_to_'+to : 'all_dates';
+  XLSX.writeFile(book, 'SaiDental_Tokens_'+suffix+'.xlsx');
+  showToast('Downloaded '+rows.length+' token record(s)');
+}
+
+function setPrescriptionExportMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  const [year, mon] = month.split('-').map(Number);
+  const lastDay = new Date(year, mon, 0).getDate();
+  qs('rxExportFrom').value = month+'-01';
+  qs('rxExportTo').value = month+'-'+String(lastDay).padStart(2,'0');
+}
+
+function prescriptionDateKey(rx) {
+  if (rx.dateISO) {
+    const d = new Date(rx.dateISO);
+    if (!Number.isNaN(d.getTime())) {
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    }
+  }
+  const parsed = new Date(rx.date||'');
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0,10);
+}
+
+function exportPrescriptionsExcel() {
+  let from = qs('rxExportFrom').value;
+  let to = qs('rxExportTo').value;
+  const month = qs('rxExportMonth').value;
+  if (month) { setPrescriptionExportMonth(month); from=qs('rxExportFrom').value; to=qs('rxExportTo').value; }
+  if (from && to && from > to) { showToast('From date must be before To date','err'); return; }
+  const tokenById = Object.fromEntries((_allTokenCache||[]).map(t => [t.id, t]));
+  const prescriptions = _histCache.filter(rx => {
+    const date = prescriptionDateKey(rx);
+    return (!from || date >= from) && (!to || date <= to);
+  });
+  if (!prescriptions.length) { showToast('No prescriptions found for this period','warn'); return; }
+  const rows = prescriptions.map(rx => {
+    const token = tokenById[rx.tokenId];
+    const medicines = (rx.medicines||[]).filter(m=>m.name).map(m =>
+      [m.name, m.dosage, m.freq, m.dur].filter(Boolean).join(' - ')
+    ).join('; ');
+    return {
+      'Date': rx.date||prescriptionDateKey(rx),
+      'Rx No': rx.rxno||'',
+      'Patient Name': rx.patientName||'',
+      'Treatment': rx.patientDx||'',
+      'Treatment Fee': Number(rx.treatmentFee)||0,
+      'Medicines': medicines,
+      'Payment Method': rx.paymentMethod||token?.paymentMethod||'',
+      'Medicine Subtotal': Math.max(0,(rx.grand||0)-(Number(rx.treatmentFee)||0)),
+      'Grand Total': rx.grand||0,
+      'Paid': rx.paid||0,
+      'Payment Status': rx.paymentStatus||'pending'
+    };
+  });
+  if (typeof XLSX === 'undefined') { showToast('Excel export library is not loaded','err'); return; }
+  const sheet = XLSX.utils.json_to_sheet(rows);
+  sheet['!cols'] = Object.keys(rows[0]).map(key => ({wch:Math.min(32,Math.max(12,key.length+2))}));
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Prescription Details');
+  const suffix = from && to ? from+'_to_'+to : 'all_dates';
+  XLSX.writeFile(book, 'SaiDental_Prescriptions_'+suffix+'.xlsx');
+  showToast('Downloaded '+rows.length+' prescription record(s)');
+}
+
+function renderTokens() {
+  const list = qs('tokenList');
+  if (!list) return;
+  const waiting = _tokenCache.filter(t => t.status === 'waiting').length;
+  const latest = _tokenCache[_tokenCache.length-1];
+  qs('tokenWaitingCount').textContent = waiting;
+  qs('tokenTotalCount').textContent = _tokenCache.length;
+  qs('tokenLatest').textContent = latest ? latest.tokenNumber : '—';
+  const badge = qs('tokenBadge');
+  if (badge) { badge.textContent = waiting; badge.style.display = 'inline'; }
+  if (!_tokenCache.length) {
+    list.innerHTML = '<div class="empty-state"><p>No tokens registered for this date.</p><span>Registered tokens will appear here immediately.</span></div>';
+    return;
+  }
+  list.innerHTML = _tokenCache.slice().reverse().map(token => {
+    const status = token.status || 'waiting';
+    const statusLabel = status === 'completed' ? 'Completed' : status === 'called' ? 'Called' : 'Waiting';
+    return '<div class="token-row">' +
+      '<div class="token-number">'+escapeTokenHtml(token.tokenNumber)+'</div>' +
+      '<div class="token-patient" onclick="openPrescriptionForToken(\''+escapeTokenHtml(token.id)+'\')" style="cursor:pointer"><strong>'+escapeTokenHtml(token.patientName)+'</strong>' +
+      '<span>BP: '+escapeTokenHtml(token.bloodPressure||'—')+' · Allergy: '+escapeTokenHtml(token.allergies||'—')+'</span></div>' +
+      '<div class="token-meta"><strong>₹'+TOKEN_FEE+'</strong><span>'+escapeTokenHtml(token.paymentMethod||'—')+'</span><span>'+escapeTokenHtml(statusLabel)+'</span></div>' +
+      '<button class="btn-sm token-receipt-btn" onclick="showTokenReceipt(\''+escapeTokenHtml(token.id)+'\')">Receipt</button>' +
+      '<button class="btn-sm" onclick="openPrescriptionForToken(\''+escapeTokenHtml(token.id)+'\')">Write Prescription</button>' +
+      (status !== 'completed' && isStaff() ? '<button class="btn-sm" onclick="completeToken(\''+escapeTokenHtml(token.id)+'\')">Complete</button>' : '') +
+      '</div>';
+  }).join('');
+}
+
+async function createToken() {
+  const name = qs('tokenPatientName').value.trim();
+  const contact = qs('tokenPatientContact').value.trim();
+  const age = qs('tokenPatientAge').value.trim();
+  const gender = qs('tokenPatientGender').value;
+  const bp = qs('tokenBP').value.trim();
+  const allergies = qs('tokenAllergies').value.trim();
+  const medicationHistory = qs('tokenMedicationHistory').value.trim();
+  const paymentMethod = qs('tokenPaymentMethod').value.trim();
+  if (!name || !contact || !bp || !medicationHistory || !paymentMethod) { showToast('Enter name, contact, BP, medication history, and payment method','err'); return; }
+  const btn = qs('createTokenBtn');
+  btn.disabled = true; btn.textContent = 'Confirming…';
+  try {
+    const dateKey = tokenDateKey();
+    const counterRef = window._fb.doc(SETT_COL(), 'tokenCounter_'+dateKey);
+    const tokenNumber = await window._fb.runTransaction(window._db, async transaction => {
+      const counter = await transaction.get(counterRef);
+      const next = (counter.exists() ? Number(counter.data().value)||0 : 0) + 1;
+      const tokenRef = window._fb.doc(TOKEN_COL(), 'token_'+dateKey+'_'+next);
+      const patientMobile = normalizeMobile(contact);
+      const patientRef = window._fb.doc(PAT_COL(), patientMobile);
+      transaction.set(counterRef, {value:next, dateKey, updatedAt:window._fb.serverTimestamp()});
+      transaction.set(tokenRef, {
+        tokenNumber: next, dateKey, patientName:name, patientContact:contact,
+        patientAge:age, patientGender:gender, bloodPressure:bp, allergies, medicationHistory, fee:TOKEN_FEE,
+        paymentMethod, paymentStatus:'paid', status:'waiting', receiptNumber:'R-'+dateKey.replace(/-/g,'')+'-'+next,
+        createdAt:new Date().toISOString(), createdAtServer:window._fb.serverTimestamp(),
+        createdBy:window._auth.currentUser?.email||''
+      });
+      transaction.set(patientRef, {
+        mobile:patientMobile, name, age, gender, allergies,
+        lastBP:bp, medicalHistory:medicationHistory, lastToken:next,
+        lastVisit:new Date().toISOString(), updatedAt:new Date().toISOString(),
+        updatedBy:window._auth.currentUser?.email||''
+      }, {merge:true});
+      return next;
+    });
+    ['tokenPatientName','tokenPatientContact','tokenPatientAge','tokenBP','tokenAllergies','tokenMedicationHistory','tokenPaymentMethod'].forEach(id => qs(id).value='');
+    qs('tokenPatientGender').value='';
+    showToast('Token '+tokenNumber+' saved');
+    setTimeout(() => {
+      const token = _allTokenCache.find(t => t.tokenNumber === tokenNumber && t.dateKey === tokenDateKey());
+      if (token) showTokenReceipt(token.id);
+    }, 300);
+  } catch (e) {
+    showToast('Token save failed: '+e.message,'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Confirm Payment & Create Token';
+  }
+}
+
+async function completeToken(id) {
+  if (!isStaff()) return;
+  try {
+    await window._fb.updateDoc(window._fb.doc(TOKEN_COL(), id), {status:'completed', completedAt:new Date().toISOString(), completedBy:window._auth.currentUser?.email||''});
+    showToast('Token marked completed');
+  } catch (e) { showToast('Could not update token: '+e.message,'err'); }
+}
+
+function openPrescriptionForToken(id) {
+  const token = _allTokenCache.find(t => t.id === id) || _tokenCache.find(t => t.id === id); if (!token) return;
+  newRxForm();
+  _activeTokenId = token.id;
+  const context = qs('rxTokenContext');
+  if (context) {
+    context.textContent = 'Token '+token.tokenNumber+' · Patient registered and payment confirmed · ₹'+TOKEN_FEE+' paid by '+(token.paymentMethod||'—');
+    context.style.display = 'block';
+  }
+  qs('pName').value = token.patientName || '';
+  qs('pContact').value = token.patientContact || '';
+  qs('pAge').value = token.patientAge || '';
+  qs('pGender').value = token.patientGender || '';
+  qs('pBP').value = token.bloodPressure || '';
+  qs('pAllergy').value = token.allergies || '';
+  qs('pMedicationHistory').value = token.medicationHistory || '';
+  const rxBtn = document.querySelector(`.tab[onclick*="newRx"]`);
+  if (rxBtn) sw('rx', rxBtn);
+  showToast('Patient details loaded for Token '+token.tokenNumber);
+}
+
+function showTokenReceipt(id) {
+  const token = _allTokenCache.find(t => t.id === id) || _tokenCache.find(t => t.id === id); if (!token) return;
+  qs('tokenReceipt').innerHTML = '<div class="receipt-brand">SAI DENTAL CLINIC</div>' +
+    '<div class="receipt-sub">Consultation Receipt</div><div class="receipt-token">Token '+escapeTokenHtml(token.tokenNumber)+'</div>' +
+    '<div class="receipt-line"><span>Receipt No.</span><strong>'+escapeTokenHtml(token.receiptNumber)+'</strong></div>' +
+    '<div class="receipt-line"><span>Patient</span><strong>'+escapeTokenHtml(token.patientName)+'</strong></div>' +
+    '<div class="receipt-line"><span>Contact</span><strong>'+escapeTokenHtml(token.patientContact||'—')+'</strong></div>' +
+    '<div class="receipt-line"><span>Blood Pressure</span><strong>'+escapeTokenHtml(token.bloodPressure)+'</strong></div>' +
+    '<div class="receipt-line"><span>Medication History</span><strong>'+escapeTokenHtml(token.medicationHistory||'—')+'</strong></div>' +
+    '<div class="receipt-line"><span>Payment Method</span><strong>'+escapeTokenHtml(token.paymentMethod||'—')+'</strong></div>' +
+    '<div class="receipt-total"><span>Consultation Fee</span><strong>₹'+TOKEN_FEE+' · PAID</strong></div>' +
+    '<div class="receipt-foot">'+escapeTokenHtml(new Date(token.createdAt).toLocaleString('en-IN'))+'<br>Thank you for visiting Sai Dental Clinic</div>';
+  qs('tokenReceiptModal').style.display='flex';
+}
+function printTokenReceipt() {
+  document.body.classList.add('token-print');
+  window.print();
+  setTimeout(() => document.body.classList.remove('token-print'), 500);
+}
 
 /* ═══ MEDICINE DATA ═══ */
 const MEDS=[
@@ -297,8 +579,9 @@ function delRow(id){
 }
 function calcBill(){
   const sub=rows.reduce((a,r)=>a+(r.qty*r.rate),0);
+  const treatmentFee=Math.max(0,Number(qs('treatmentFee')?.value)||0);
   qs('bSub').textContent=fmt(sub);
-  qs('bGrand').textContent='₹'+Math.round(sub);
+  qs('bGrand').textContent='₹'+Math.round(sub+treatmentFee);
   qs('subTotal').textContent=rows.length?'Subtotal: '+fmt(sub):'';
 }
 
@@ -364,7 +647,8 @@ function fillPatient(id){
   qs('pBP').value      =rx.patientBP     ||'';
   qs('pDx').value      =rx.patientDx     ||'';
   qs('pAllergy').value =rx.patientAllergy||'';
-  qs('pRef').value     =rx.patientRef    ||'';
+  if(qs('pRef'))qs('pRef').value     =rx.patientRef    ||'';
+  qs('pMedicationHistory').value =rx.patientMedicationHistory||'';
   qs('patDropdown').className='pat-dropdown';
   qs('patSearchWrap').style.display='none';
   showToast('Patient loaded: '+rx.patientName);
@@ -393,7 +677,8 @@ async function saveRx(){
   const btn=qs('btnSave');
   btn.disabled=true;btn.classList.add('saving');
   try{
-    const grand=rows.reduce((a,r)=>a+(r.qty*r.rate),0);
+    const treatmentFee=Math.max(0,Number(qs('treatmentFee')?.value)||0);
+    const grand=rows.reduce((a,r)=>a+(r.qty*r.rate),0)+treatmentFee;
     let rxno,id,existing;
     if(_editingRxId){
       existing=_histCache.find(r=>r.id===_editingRxId);
@@ -416,16 +701,20 @@ async function saveRx(){
       patientAge:    qs('pAge').value,
       patientGender: qs('pGender').value,
       patientContact:qs('pContact').value,
-      patientBP:     qs('pBP').value,
-      patientDx:     qs('pDx').value,
-      patientAllergy:qs('pAllergy').value,
-      patientRef:    qs('pRef').value,
+       patientBP:     qs('pBP').value,
+       patientDx:     qs('pDx').value,
+       patientAllergy:qs('pAllergy').value,
+       patientRef:    qs('pRef')?.value||'',
+       patientMedicationHistory:qs('pMedicationHistory').value,
+       tokenId:       _activeTokenId || rxdata.tokenId || '',
+       treatmentFee,
       medicines:     rows.map(r=>({...r})),
       notes:         qs('notes').value,
       followup:      qs('followup').value,
       grand:         Math.round(grand),
       paid:          rxdata.paid||0,
-      paymentStatus: rxdata.paymentStatus||'pending',
+       paymentStatus: rxdata.paymentStatus||'pending',
+       paymentMethod: rxdata.paymentMethod||'',
       xrays:         rxdata.xrays||[]
     };
     try{
@@ -525,7 +814,7 @@ function renderHistPage(list){
 function goPg(p){histPage=p;filterHist();window.scrollTo(0,0);}
 
 function setFormReadOnly(ro){
-  const ids=['pName','pAge','pGender','pContact','pBP','pDx','pAllergy','pRef','notes','followup'];
+  const ids=['pName','pAge','pGender','pContact','pBP','pDx','pAllergy','pMedicationHistory','treatmentFee','notes','followup'];
   ids.forEach(id=>{const el=qs(id);if(el)el.disabled=ro;});
   qs('btnSave').style.display=ro?'none':'';
   qs('addRowBtn').style.display=ro?'none':'';
@@ -552,7 +841,9 @@ function loadRx(id){
   qs('pBP').value     =rx.patientBP     ||'';
   qs('pDx').value     =rx.patientDx     ||'';
   qs('pAllergy').value=rx.patientAllergy||'';
-  qs('pRef').value    =rx.patientRef    ||'';
+  if(qs('pRef'))qs('pRef').value    =rx.patientRef    ||'';
+  qs('pMedicationHistory').value=rx.patientMedicationHistory||'';
+  qs('treatmentFee').value=rx.treatmentFee||0;
   qs('notes').value   =rx.notes         ||'';
   qs('followup').value=rx.followup      ||'';
   rows=[];rid=0;(rx.medicines||[]).forEach(m=>addRow(m));
@@ -567,7 +858,7 @@ function loadRx(id){
   renderXrayGallery();
   const uploadBtn=qs('xrayUploadBtn');
   if(uploadBtn)uploadBtn.style.display=isS?'none':'inline-flex';
-  sw('rx',document.querySelectorAll('.tab')[0]);
+  sw('rx',document.querySelector(`.tab[onclick*="newRx"]`));
   /* Show follow-up notes if any (from prescription + separate collection) */
   const fupEl=qs('loadedFupNotes');
   if(fupEl){
@@ -711,7 +1002,7 @@ async function exportAll(){
 
 /* ─── TABS ─── */
 function sw(tab,btn){
-  const tabs=['rx','hist','dash','apt','pat','inv','fup'];
+  const tabs=['token','rx','hist','dash','apt','pat','inv','fup'];
   const curTab = tabs.find(t => {
     const el = qs(t+'Tab');
     return el && el.style.display !== 'none';
@@ -768,8 +1059,13 @@ async function clearAll(){
 }
 function newRxForm(){
   if(_editingRxId){_editingRxId=null;qs('btnSaveLabel').textContent='Save Prescription';}
+  _activeTokenId=null;
+  const tokenContext=qs('rxTokenContext');
+  if(tokenContext)tokenContext.style.display='none';
   rows=[];rid=0;renderRows();
-  ['pName','pAge','pContact','pBP','pRef','notes'].forEach(id=>qs(id).value='');
+  ['pName','pAge','pContact','pBP','pMedicationHistory','notes'].forEach(id=>qs(id).value='');
+  qs('treatmentFee').value=0;
+  calcBill();
   ['pGender','pDx'].forEach(id=>qs(id).value='');
   qs('followup').value='After 5 days';
   qs('pAllergy').value='';
@@ -804,7 +1100,9 @@ async function repeatPreviousRx(){
   qs('pBP').value     =last.patientBP     ||'';
   qs('pDx').value     =last.patientDx     ||'';
   qs('pAllergy').value=last.patientAllergy||'';
-  qs('pRef').value    =last.patientRef    ||'';
+  if(qs('pRef'))qs('pRef').value    =last.patientRef    ||'';
+  qs('pMedicationHistory').value=last.patientMedicationHistory||'';
+  qs('treatmentFee').value=last.treatmentFee||0;
   qs('notes').value   =last.notes         ||'';
   qs('followup').value=last.followup      ||'';
   rows=[];rid=0;(last.medicines||[]).forEach(m=>addRow(m));
@@ -812,7 +1110,7 @@ async function repeatPreviousRx(){
 }
 function newRx(){
   newRxForm();
-  const rxBtn = document.querySelectorAll('.tab')[0];
+  const rxBtn = document.querySelector(`.tab[onclick*="newRx"]`);
   if(rxBtn) sw('rx', rxBtn);
   showToast('New prescription ready');
 }
@@ -972,6 +1270,7 @@ function saveDraft(){
     pName:qs('pName')?.value||'',pAge:qs('pAge')?.value||'',pGender:qs('pGender')?.value||'',
     pContact:qs('pContact')?.value||'',pBP:qs('pBP')?.value||'',pDx:qs('pDx')?.value||'',
     pAllergy:qs('pAllergy')?.value||'',pRef:qs('pRef')?.value||'',
+    pMedicationHistory:qs('pMedicationHistory')?.value||'',treatmentFee:qs('treatmentFee')?.value||0,
     notes:qs('notes')?.value||'',followup:qs('followup')?.value||'',
     rows:rows.map(r=>({...r}))
   };
@@ -993,7 +1292,9 @@ function restoreDraft(){
     qs('pBP').value=d.pBP||'';
     qs('pDx').value=d.pDx||'';
     qs('pAllergy').value=d.pAllergy||'';
-    qs('pRef').value=d.pRef||'';
+    qs('pMedicationHistory').value=d.pMedicationHistory||'';
+    qs('treatmentFee').value=d.treatmentFee||0;
+    if(qs('pRef'))qs('pRef').value=d.pRef||'';
     qs('notes').value=d.notes||'';
     qs('followup').value=d.followup||'';
     if(d.rows?.length){rows=[];rid=0;d.rows.forEach(m=>addRow(m));}
@@ -1057,8 +1358,8 @@ async function recordPayment(){
   if(newPaid>rx.grand){showToast('Payment exceeds grand total','err');return;}
   const status=newPaid>=rx.grand?'paid':newPaid>0?'partial':'pending';
   try{
-    await window._fb.updateDoc(window._fb.doc(RX_COL(),id),{paid:newPaid,paymentStatus:status});
-    rx.paid=newPaid;rx.paymentStatus=status;
+     await window._fb.updateDoc(window._fb.doc(RX_COL(),id),{paid:newPaid,paymentStatus:status,paymentMethod:method});
+     rx.paid=newPaid;rx.paymentStatus=status;rx.paymentMethod=method;
     closeModal(null,'payModal');
     updateBillPay(rx);
     showToast('✅ Payment recorded ('+method+')');
@@ -1148,11 +1449,11 @@ function duplicateRx(id){
   qs('pBP').value=rx.patientBP||'';
   qs('pDx').value=rx.patientDx||'';
   qs('pAllergy').value=rx.patientAllergy||'';
-  qs('pRef').value=rx.patientRef||'';
+  if(qs('pRef'))qs('pRef').value=rx.patientRef||'';
   qs('notes').value=rx.notes||'';
   qs('followup').value=rx.followup||'';
   (rx.medicines||[]).forEach(m=>addRow(m));
-  sw('rx',document.querySelectorAll('.tab')[0]);
+   sw('rx',document.querySelector(`.tab[onclick*="newRx"]`));
   showToast('Duplicated: '+rx.rxno);
 }
 
@@ -1184,9 +1485,23 @@ function normalizeMobile(val){
   return (val||'').replace(/[^\d]/g,'');
 }
 
+function tokenAsPatientVisit(token) {
+  return {
+    id:'token_'+token.id, tokenId:token.id, isTokenOnly:true,
+    tokenNumber:token.tokenNumber, patientName:token.patientName||'',
+    patientContact:token.patientContact||'', patientAge:token.patientAge||'',
+    patientGender:token.patientGender||'', patientBP:token.bloodPressure||'',
+    patientAllergy:token.allergies||'', patientMedicationHistory:token.medicationHistory||'',
+    dateISO:token.createdAt||'', date:tokenDateLabel(token.dateKey),
+    grand:token.fee||TOKEN_FEE, paid:token.paymentStatus==='paid'?(token.fee||TOKEN_FEE):0,
+    patientDx:'Token consultation', medicines:[], notes:''
+  };
+}
+
 function getPatientVisits(mobile){
   if(!mobile) return [];
-  return _histCache.filter(r => normalizeMobile(r.patientContact) === mobile);
+  return _histCache.filter(r => normalizeMobile(r.patientContact) === mobile)
+    .concat(_allTokenCache.filter(t => normalizeMobile(t.patientContact) === mobile).map(tokenAsPatientVisit));
 }
 
 function showPatientProfile(id){
@@ -1198,7 +1513,7 @@ function showPatientProfile(id){
     qs('patientListSection').style.display='none';
     qs('patientProfileSection').style.display='block';
     document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
-    const patBtn = document.querySelectorAll('.tab')[4];
+    const patBtn = document.querySelector(`.tab[onclick*="'pat'"]`);
     if(patBtn){ patBtn.classList.add('on'); sw('pat', patBtn); }
     renderPatientProfile(mobile);
   }else{
@@ -1211,7 +1526,7 @@ function showPatientProfile(id){
     qs('patientListSection').style.display='none';
     qs('patientProfileSection').style.display='block';
     document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
-    const patBtn = document.querySelectorAll('.tab')[4];
+    const patBtn = document.querySelector(`.tab[onclick*="'pat'"]`);
     if(patBtn){ patBtn.classList.add('on'); sw('pat', patBtn); }
     renderNameBasedProfile(visits);
   }
@@ -1238,7 +1553,8 @@ function renderPatientList(){
   if(!el)return;
   const q = (qs('patSearch')?.value||'').toLowerCase();
   const grouped = {};
-  _histCache.forEach((r, idx) => {
+  const allVisits = _histCache.concat(_allTokenCache.map(tokenAsPatientVisit));
+  allVisits.forEach((r, idx) => {
     let key = normalizeMobile(r.patientContact);
     if(!key){
       const nk = (r.patientName||'unknown').toLowerCase().replace(/\s+/g,'');
@@ -1317,8 +1633,9 @@ async function renderPatientProfile(mobile){
   qs('patVisitList').innerHTML = visitSorted.map(r => {
     const paid = r.paid||0;
     const vBal = (r.grand||0) - paid;
-    return '<div class="pat-visit-item" onclick="loadRx(\'' + r.id + '\')">' +
-      '<div class="pat-visit-rxno">' + (r.rxno||'—') + '</div>' +
+    const action = r.isTokenOnly ? "showTokenReceipt('"+r.tokenId+"')" : "loadRx('"+r.id+"')";
+    return '<div class="pat-visit-item" onclick="'+action+'">' +
+      '<div class="pat-visit-rxno">' + (r.isTokenOnly ? 'Token '+r.tokenNumber : (r.rxno||'—')) + '</div>' +
       '<div class="pat-visit-date">' + (r.date||'') + '</div>' +
       '<div class="pat-visit-dx">' + (r.patientDx||'—') + '</div>' +
       '<div class="pat-visit-meds" title="' + ((r.medicines||[]).map(m=>m.name).join(', ')) + '">' + (r.medicines||[]).map(m=>m.name).join(', ') + '</div>' +
@@ -2426,12 +2743,13 @@ waitFB(()=>{
   window._fb.onAuthStateChanged(window._auth, async user=>{
     if(user){
       qs('loginOverlay').style.display='none';
-      qs('appMain').style.display='block';
       qs('userEmail').textContent=user.email;
       qs('userAvatar').textContent=user.email[0].toUpperCase();
 
       /* Fetch user role (normalize email to lowercase) */
       _currentRole = await getUserRole(user.email.toLowerCase());
+      qs('appMain').style.display='block';
+      startTokenListener();
 
       /* Show role badge in sync bar */
       const roleBadge = document.createElement('span');
@@ -2439,7 +2757,7 @@ waitFB(()=>{
       roleBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;margin-left:6px';
       roleBadge.style.background = isStaff() ? '#f59e0b' : 'var(--teal)';
       roleBadge.style.color = '#fff';
-      roleBadge.textContent = isStaff() ? 'STAFF' : 'DOCTOR';
+      roleBadge.textContent = isStaff() ? 'STAFF' : 'ADMIN';
       const existingBadge = document.getElementById('roleBadge');
       if (existingBadge) existingBadge.remove();
       qs('userEmail').after(roleBadge);
@@ -2468,6 +2786,13 @@ waitFB(()=>{
       applyRoleUI(); /* refresh follow-up badge after history loads */
       updateBackBtn();
       if(isStaff())setTimeout(()=>showFupNotification(),500);
+      if(isStaff()){
+        const tokenBtn=document.querySelector(`.tab[onclick*="'token'"]`);
+        if(tokenBtn)sw('token',tokenBtn);
+      }else{
+        const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+        if(rxBtn)sw('rx',rxBtn);
+      }
       restoreDraft();
       populateDoctorSelect();
       updateAptBadge();
@@ -2477,6 +2802,7 @@ waitFB(()=>{
         navigator.serviceWorker.register('./sw.js').catch(()=>{});
       }
     }else{
+      if(_tokenUnsubscribe){_tokenUnsubscribe();_tokenUnsubscribe=null;}
       qs('loginOverlay').style.display='flex';
       qs('appMain').style.display='none';
       const btn=qs('loginBtn');

@@ -4,11 +4,17 @@ service cloud.firestore {
 
     /* ─── Helper: check role ─── */
     function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'admin';
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower())).data.role == 'admin';
     }
     function isStaff() {
-      let role = get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role;
-      return role == 'staff' || role == 'admin';
+      return request.auth != null
+        && (get(/databases/$(database)/documents/users/$(request.auth.token.email.lower())).data.role == 'staff'
+          || get(/databases/$(database)/documents/users/$(request.auth.token.email.lower())).data.role == 'admin');
+    }
+    function isDoctor() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.token.email.lower())).data.role == 'doctor';
     }
 
     /* ─── Prescriptions ─── */
@@ -22,8 +28,8 @@ service cloud.firestore {
     /* ─── Patients (keyed by mobile) ─── */
     match /patients/{mobile} {
       allow read: if request.auth != null;
-      allow create: if isAdmin() && request.resource.data.mobile == mobile;
-      allow update: if isAdmin();
+      allow create: if (isAdmin() || isStaff() || isDoctor()) && request.resource.data.mobile == mobile;
+      allow update: if isAdmin() || isStaff() || isDoctor();
       allow delete: if isAdmin();
     }
 
@@ -36,7 +42,7 @@ service cloud.firestore {
     /* ─── Settings ─── */
     match /settings/{key} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || ((isStaff() || isDoctor()) && key.matches('tokenCounter_.*'));
     }
 
     /* ─── Users (role assignments) ─── */
@@ -55,6 +61,14 @@ service cloud.firestore {
     match /inventory/{invId} {
       allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+
+    /* ─── Daily patient tokens ─── */
+    match /tokens/{tokenId} {
+      allow read: if request.auth != null;
+      allow create: if isStaff() || isDoctor() || isAdmin();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
     }
   }
 }

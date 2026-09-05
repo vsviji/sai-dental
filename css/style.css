@@ -135,6 +135,7 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .bill-row:last-child{border-bottom:none}
 .bill-lbl{flex:1;font-size:13px;color:var(--muted)}
 .bill-val{font-size:13px;font-weight:500;color:var(--ink);min-width:90px;text-align:right}
+.treatment-fee-row input{width:105px;padding:6px 8px;text-align:right;font-weight:500;color:var(--teal-d)}
 .bill-row.subtotal-row{background:var(--teal-l)}
 .bill-row.subtotal-row .bill-lbl,.bill-row.subtotal-row .bill-val{color:var(--teal-d);font-weight:500}
 .bill-grand{background:var(--teal);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-radius:0}
@@ -166,6 +167,8 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .hist-search{flex:1;min-width:140px;max-width:260px}
 .hist-filter{min-width:120px;max-width:160px}
 .hist-sort{min-width:100px;max-width:150px}
+.prescription-export-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:0 0 14px;border-bottom:1px solid var(--border)}
+.prescription-export-toolbar input{width:auto;padding:7px 9px;font-size:12px}.prescription-export-toolbar .flbl{color:var(--teal-d);margin-right:4px}.prescription-export-toolbar .btn-export{padding:8px 14px;font-size:12px}
 .hist-item{border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;transition:all .2s;background:var(--surface);display:flex;flex-wrap:wrap;align-items:flex-start}
 .hist-item:hover{border-color:var(--teal-m);background:var(--teal-l)}
 .hist-main{flex:1;min-width:200px;cursor:pointer}
@@ -227,9 +230,10 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 
 /* ── PRINT ── */
 @media print{
+  .inline-med-history{display:grid!important;grid-template-columns:max-content 1fr!important;align-items:center!important;gap:8px!important}
   body{background:#fff}
   .topnav,.tabs,.action-bar,.tbl-foot,.btn-del,.no-print,
-  #histTab,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
+   #histTab,#xrayCard,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
    .bill-pay-actions,.toast,.pat-search-wrap,
    #patSearchWrap,[onclick*="togglePatSearch"]{display:none!important}
   .app{padding:0;max-width:100%}
@@ -263,6 +267,7 @@ body.pdf-mode [id^="rxTab"] .action-bar,
 body.pdf-mode [id^="rxTab"] .tbl-foot,
 body.pdf-mode [id^="rxTab"] .btn-del,
 body.pdf-mode [id^="rxTab"] .no-print{display:none!important}
+body.pdf-mode [id^="rxTab"] .inline-med-history{display:grid!important;grid-template-columns:max-content 1fr!important;align-items:center!important;gap:8px!important}
 body.pdf-mode [id^="rxTab"] .card,
 body.pdf-mode [id^="rxTab"] .clinic-card{box-shadow:none;border:1px solid #ccc}
 body.pdf-mode [id^="rxTab"] thead tr,
@@ -471,6 +476,42 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 
 .btn-sm{padding:4px 10px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--ink);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .15s}
 .btn-sm:hover{background:var(--surf2)}
+
+/* Keep the prescription table readable while reducing row height. */
+#rxTab .tbl-scroll table{min-width:840px;font-size:12px}
+#rxTab .tbl-scroll th{padding:7px 5px}
+#rxTab .tbl-scroll td{padding:4px 4px}
+#rxTab .tbl-scroll td select,#rxTab .tbl-scroll td input[type=text],#rxTab .tbl-scroll td input[type=number]{padding:4px 5px;font-size:11px}
+#rxTab .tbl-scroll td:nth-child(5),#rxTab .tbl-scroll th:nth-child(5){min-width:86px;white-space:nowrap}
+#rxTab .tbl-scroll td:nth-child(9),#rxTab .tbl-scroll th:nth-child(9){min-width:78px;white-space:nowrap}
+
+/* ─── TOKEN QUEUE ─── */
+.token-hero{background:var(--teal);color:#fff;border:none}
+.token-hero-body{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 24px}
+.token-kicker{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.7);margin-bottom:8px}
+.token-current-label{font-size:12px;color:rgba(255,255,255,.8)}
+.token-current{font-family:'Playfair Display',Georgia,serif;font-size:48px;line-height:1.1;font-weight:700}
+.token-stats{display:flex;gap:10px;flex-wrap:wrap}
+.token-stats div{min-width:105px;padding:10px 14px;border:1px solid rgba(255,255,255,.25);border-radius:var(--r);background:rgba(255,255,255,.1);text-align:center}
+.token-stats strong{display:block;font-size:20px;color:#fff}.token-stats span{display:block;font-size:10px;color:rgba(255,255,255,.75);margin-top:2px}
+.token-date{margin-left:auto;font-size:12px;color:var(--muted)}
+.token-date-picker{width:auto;max-width:145px;padding:6px 8px;font-size:12px;margin-left:10px}
+.token-export-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.token-export-toolbar input{width:auto;padding:7px 9px;font-size:12px}.token-export-toolbar .flbl{color:var(--teal-d);margin-right:4px}.token-export-sep{font-size:12px;color:var(--muted)}
+.inline-med-history{display:grid;grid-template-columns:max-content 1fr;align-items:center;gap:8px}.inline-med-history .flbl{white-space:nowrap}
+.token-form-grid{grid-template-columns:repeat(4,minmax(140px,1fr))}
+.token-fee-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--border);margin-top:18px;padding-top:16px}
+.token-fee-row strong{font-size:20px;color:var(--teal-d);margin-left:10px}.token-paid{font-size:10px;text-transform:uppercase;color:var(--teal);background:var(--teal-l);padding:3px 8px;border-radius:10px;margin-left:8px;font-weight:600}
+.token-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border)}.token-row:last-child{border-bottom:none}
+.token-number{width:44px;height:44px;border-radius:50%;background:var(--teal-l);color:var(--teal-d);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:20px;font-weight:700;flex-shrink:0}
+.token-patient{flex:1;min-width:0}.token-patient strong{display:block;font-size:14px}.token-patient span,.token-meta span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.token-meta{text-align:right;min-width:86px}.token-meta strong{display:block;color:var(--teal-d)}.token-receipt-btn{color:var(--teal);border-color:var(--teal-m)}
+.token-receipt-modal{width:420px;max-width:94vw}.token-receipt{padding:24px;background:#fff}.receipt-brand{text-align:center;font-family:'Playfair Display',Georgia,serif;font-weight:700;font-size:21px;color:var(--teal-d)}
+.receipt-sub{text-align:center;color:var(--muted);font-size:12px;margin-top:2px}.receipt-token{text-align:center;font-size:27px;font-weight:700;color:var(--teal);padding:18px 0;border-bottom:1px dashed var(--border2)}
+.receipt-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px}.receipt-line span{color:var(--muted)}.receipt-line strong{text-align:right}.receipt-total{display:flex;justify-content:space-between;padding:15px 0;font-size:14px}.receipt-total strong{color:var(--teal)}
+.receipt-foot{text-align:center;border-top:1px solid var(--border);padding-top:14px;color:var(--muted);font-size:11px;line-height:1.6}.token-receipt-actions{padding:0 24px 20px;text-align:right}
+@media(max-width:700px){.token-hero-body{align-items:flex-start;flex-direction:column}.token-stats{width:100%}.token-stats div{flex:1;min-width:0}.token-form-grid{grid-template-columns:1fr 1fr}.token-fee-row{align-items:flex-start;flex-direction:column}.token-fee-row button{width:100%}.token-row{align-items:flex-start;flex-wrap:wrap}.token-meta{margin-left:auto}.token-row .btn-sm{margin-left:58px}}
+@media print{#tokenTab{display:none!important}body.token-print>*{display:none!important}body.token-print #tokenReceiptModal{display:block!important;position:static;background:#fff;padding:0}body.token-print .token-receipt-modal{margin:0 auto;box-shadow:none;border:none;max-width:420px}body.token-print .token-receipt{padding:20px}}
 
 /* ─── PATIENT MANAGEMENT ─── */
 .pat-item{display:flex;align-items:center;gap:14px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;cursor:pointer;transition:all .2s;background:var(--surface)}

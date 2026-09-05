@@ -114,6 +114,7 @@
       </div>
     </div>
     <div class="tabs">
+      <button class="tab" onclick="sw('token',this)">Tokens <span class="hbadge" id="tokenBadge">0</span></button>
       <button class="tab on" onclick="newRx()">New Prescription</button>
       <button class="tab" onclick="sw('hist',this)">History <span class="hbadge" id="hcnt">0</span></button>
       <button class="tab" onclick="sw('dash',this)">Dashboard</button>
@@ -124,8 +125,96 @@
     </div>
   </div>
 
+  <!-- TOKEN REGISTRATION TAB -->
+  <div id="tokenTab" style="display:none">
+    <div class="card token-hero">
+      <div class="card-body token-hero-body">
+        <div>
+          <div class="token-kicker">Selected day's patient queue</div>
+          <div class="token-current-label">Latest token</div>
+          <div class="token-current" id="tokenLatest">—</div>
+        </div>
+        <div class="token-stats">
+          <div><strong id="tokenWaitingCount">0</strong><span>Waiting</span></div>
+          <div><strong id="tokenTotalCount">0</strong><span>Registered</span></div>
+          <div><strong>₹200</strong><span>Consultation fee</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="tokenFormCard">
+      <div class="card-hdr">
+        <div class="card-icon">♙</div>
+        <span class="card-title">Create Patient Token</span>
+        <span class="token-date" id="tokenToday"></span>
+      </div>
+      <div class="card-body">
+        <div class="pgrid token-form-grid">
+          <div class="fld">
+            <label class="flbl">Patient Name *</label>
+            <input id="tokenPatientName" type="text" placeholder="Full name" autocomplete="name"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Contact No. *</label>
+            <input id="tokenPatientContact" type="text" placeholder="Phone number" autocomplete="tel"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Age</label>
+            <input id="tokenPatientAge" type="number" min="1" max="120" placeholder="Years"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Gender</label>
+            <select id="tokenPatientGender"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select>
+          </div>
+          <div class="fld">
+            <label class="flbl">Blood Pressure *</label>
+            <input id="tokenBP" type="text" placeholder="e.g., 120/80"/>
+          </div>
+          <div class="fld">
+            <label class="flbl">Allergies</label>
+            <input id="tokenAllergies" type="text" placeholder="None / list allergies"/>
+          </div>
+          <div class="fld" style="grid-column:span 2">
+            <label class="flbl">Medication Taken / Past History *</label>
+            <textarea id="tokenMedicationHistory" rows="2" placeholder="Write medicines taken, past history, or None"></textarea>
+          </div>
+          <div class="fld">
+            <label class="flbl">Payment Method *</label>
+            <input id="tokenPaymentMethod" type="text" placeholder="Cash / GPay / BPay"/>
+          </div>
+        </div>
+        <div class="token-fee-row">
+          <div><span class="flbl">Consultation Fee</span><strong>₹200</strong><span class="token-paid">Paid</span></div>
+          <button class="btn-save" id="createTokenBtn" onclick="createToken()">Confirm Payment &amp; Create Token</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <div class="card-icon">☷</div>
+        <span class="card-title">Tokens for <span id="tokenListDate">Today</span></span>
+        <input class="token-date-picker" id="tokenDatePicker" type="date" onchange="changeTokenDate(this.value)" aria-label="Select token date"/>
+        <span style="margin-left:auto;font-size:12px;color:var(--muted)" id="tokenSyncStatus">Live updates enabled</span>
+      </div>
+      <div class="card-body">
+        <div class="token-export-toolbar no-print">
+          <span class="flbl">Download Excel</span>
+          <input id="tokenExportFrom" type="date" aria-label="From date"/>
+          <span class="token-export-sep">to</span>
+          <input id="tokenExportTo" type="date" aria-label="To date"/>
+          <span class="token-export-sep">or month</span>
+          <input id="tokenExportMonth" type="month" aria-label="Export month" onchange="setExportMonth(this.value)"/>
+          <button class="btn-export" onclick="exportTokensExcel()">Download Excel</button>
+        </div>
+        <div id="tokenList"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ RX TAB ══ -->
   <div id="rxTab">
+    <div id="rxTokenContext" class="no-print" style="display:none;padding:9px 14px;background:var(--teal-l);border:1px solid var(--teal-b);border-radius:var(--r);margin-bottom:14px;font-size:12px;color:var(--teal-d)"></div>
     <div id="readOnlyBanner" style="display:none;padding:10px 16px;background:var(--gold-l);border:1px solid var(--gold);border-radius:var(--r);margin-bottom:14px;font-size:13px;color:var(--gold);text-align:center">👁️ Viewing prescription — read only <button class="btn-sm" onclick="newRx()" style="margin-left:8px;background:var(--teal);color:#fff;border:none;border-radius:6px;padding:4px 12px;cursor:pointer">➕ New Prescription</button></div>
 
     <!-- Clinic Header -->
@@ -148,7 +237,7 @@
         </div>
         <div class="meta-cell">
           <div class="mlbl">Contact</div>
-          <div class="mval">+91 8122835737<br>saisri.dentalcare@gmail.com</div>
+           <div class="mval">+91 8122835737, +91 89031 57201<br>saisri.dentalcare@gmail.com</div>
         </div>
         <div class="meta-cell">
           <div class="mlbl">Details</div>
@@ -201,7 +290,7 @@
             <label class="flbl">Contact No.</label>
             <input id="pContact" type="text" placeholder="+91 XXXXX XXXXX"/>
           </div>
-          <div class="fld" style="grid-column:span 2">
+          <div class="fld">
             <label class="flbl">Diagnosis / Chief Complaint</label>
             <select id="pDx">
               <option value="">Select diagnosis</option>
@@ -229,13 +318,13 @@
             <label class="flbl">Allergies</label>
             <input id="pAllergy" type="text" placeholder="e.g., Penicillin / None"/>
           </div>
+          <div class="fld inline-med-history">
+            <label class="flbl">Medication / Past History</label>
+            <input id="pMedicationHistory" type="text" placeholder="Medicines taken / past history"/>
+          </div>
           <div class="fld">
             <label class="flbl">Blood Pressure</label>
             <input id="pBP" type="text" placeholder="e.g., 120/80"/>
-          </div>
-          <div class="fld">
-            <label class="flbl">Ref. Doctor</label>
-            <input id="pRef" type="text" placeholder="Referring doctor"/>
           </div>
         </div>
       </div>
@@ -267,14 +356,14 @@
           <thead>
             <tr>
               <th style="width:32px">#</th>
-              <th style="width:19%">Medicine Name</th>
-              <th style="width:9%">Dosage</th>
-              <th style="width:11%">Frequency</th>
-              <th style="width:10%">Duration</th>
-              <th style="width:7%">Qty</th>
-              <th style="width:9%">Rate (₹)</th>
-              <th style="width:13%">Instructions</th>
-              <th style="width:9%">Amount (₹)</th>
+              <th style="width:23%">Medicine Name</th>
+              <th style="width:8%">Dosage</th>
+              <th style="width:14%">Frequency</th>
+              <th style="width:12%">Duration</th>
+              <th style="width:6%">Qty</th>
+              <th style="width:8%">Rate (₹)</th>
+              <th style="width:12%">Instructions</th>
+              <th style="width:10%">Amount (₹)</th>
               <th style="width:32px"></th>
             </tr>
           </thead>
@@ -311,6 +400,10 @@
         </div>
         <div>
           <div class="bill-box">
+            <div class="bill-row treatment-fee-row">
+              <label class="bill-lbl" for="treatmentFee">Treatment Fee</label>
+              <input id="treatmentFee" type="number" min="0" step="1" value="0" placeholder="₹0" oninput="calcBill()"/>
+            </div>
             <div class="bill-row subtotal-row">
               <span class="bill-lbl">Subtotal (medicines)</span>
               <span class="bill-val" id="bSub">₹0.00</span>
@@ -408,15 +501,24 @@
             <option>Gingivitis</option>
             <option>Other</option>
           </select>
-          <select class="hist-sort" id="histSort" onchange="filterHist()">
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="name">Patient Name A-Z</option>
-            <option value="amount">Amount High-Low</option>
-          </select>
-          <button class="btn-export" style="padding:8px 14px;font-size:12px" onclick="exportAll()">📤 Export</button>
-        </div>
-        <div id="histList"></div>
+           <select class="hist-sort" id="histSort" onchange="filterHist()">
+             <option value="newest">Newest First</option>
+             <option value="oldest">Oldest First</option>
+             <option value="name">Patient Name A-Z</option>
+             <option value="amount">Amount High-Low</option>
+           </select>
+           <button class="btn-export" style="padding:8px 14px;font-size:12px" onclick="exportAll()">📤 Export</button>
+         </div>
+         <div class="prescription-export-toolbar no-print">
+           <span class="flbl">Download details</span>
+           <input id="rxExportFrom" type="date" aria-label="Prescription export from date"/>
+           <span class="token-export-sep">to</span>
+           <input id="rxExportTo" type="date" aria-label="Prescription export to date"/>
+           <span class="token-export-sep">or month</span>
+           <input id="rxExportMonth" type="month" aria-label="Prescription export month" onchange="setPrescriptionExportMonth(this.value)"/>
+           <button class="btn-export" onclick="exportPrescriptionsExcel()">Download Excel</button>
+         </div>
+         <div id="histList"></div>
         <div class="pagination" id="pagination"></div>
       </div>
     </div>
@@ -998,9 +1100,19 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- TOKEN RECEIPT -->
+<div class="modal-overlay" id="tokenReceiptModal" style="display:none" onclick="closeModal(event,'tokenReceiptModal')">
+  <div class="modal-card token-receipt-modal" onclick="event.stopPropagation()">
+    <div class="card-hdr no-print"><span class="card-title">Saved Receipt</span><button class="btn-clr" onclick="closeModal(null,'tokenReceiptModal')">Close</button></div>
+    <div class="token-receipt" id="tokenReceipt"></div>
+    <div class="token-receipt-actions no-print"><button class="btn-save" onclick="printTokenReceipt()">Print Receipt</button></div>
+  </div>
+</div>
+
 <!-- html2pdf for PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- App Script (classic script — loads after Firebase module) -->
-<script src="./js/app.js?v=20260529b" defer></script>
+<script src="./js/app.js?v=20260829f" defer></script>
 </body>
 </html>
