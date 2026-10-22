@@ -6,6 +6,25 @@
 /* ─── WAIT FOR FIREBASE MODULE ─── */
 function waitFB(cb){ window._fb ? cb() : setTimeout(()=>waitFB(cb),80); }
 
+function toggleLoginPassword(){
+  const input=qs('loginPwd');
+  const button=qs('togglePassword');
+  if(!input||!button)return;
+  const show=input.type==='password';
+  input.type=show?'text':'password';
+  button.setAttribute('aria-pressed',String(show));
+  button.setAttribute('aria-label',show?'Hide password':'Show password');
+  button.title=show?'Hide password':'Show password';
+  input.focus();
+}
+
+function escapeHtml(v){
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeHtmlAttr(v){
+  return escapeHtml(v).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 let _editingRxId=null;
 let _deleteRxId=null;
 let _lastDeletedRx=null;
@@ -85,25 +104,36 @@ async function nextRxNo(){
 }
 
 /* ═══ ROLE-BASED ACCESS ═══ */
-let _currentRole = 'admin'; /* default: admin (backward compat) */
+let _currentRole = 'staff';
 
 async function getUserRole(email) {
-  if (!email) return 'admin';
+  if (!email) return 'staff';
   try {
-    const docRef = window._fb.doc(window._fb.collection(window._db, 'users'), email);
+    const users = window._fb.collection(window._db, 'users');
+    const docRef = window._fb.doc(users, email);
     const snap = await window._fb.getDoc(docRef);
     if (snap.exists()) {
-      const role = snap.data().role;
+      const role = String(snap.data().role || 'staff').trim().toLowerCase();
       console.log('Role fetched for', email, ':', role);
-      return role || 'staff';
+      return role;
     }
-    console.warn('No role doc found for', email, '- defaulting to admin');
-  } catch (e) { console.warn('Role fetch error for', email, ':', e.message, '- defaulting to admin'); }
-  return 'admin';
+    /* Also support user documents with auto-generated IDs and an email field. */
+    const byEmail = await window._fb.getDocs(
+      window._fb.query(users, window._fb.where('email', '==', email))
+    );
+    if (!byEmail.empty) {
+      const role = String(byEmail.docs[0].data().role || 'staff').trim().toLowerCase();
+      console.log('Role fetched for', email, 'from email field:', role);
+      return role;
+    }
+    console.warn('No role doc found for', email, '- defaulting to staff');
+  } catch (e) { console.warn('Role fetch error for', email, ':', e.message, '- defaulting to staff'); }
+  return 'staff';
 }
 
 function isAdmin() { return _currentRole === 'admin'; }
 function isStaff() { return _currentRole === 'staff'; }
+function isDoctor() { return _currentRole === 'doctor'; }
 
 /* ═══ TOKEN REGISTRATION ═══ */
 let _tokenUnsubscribe = null;
@@ -180,10 +210,10 @@ function exportTokensExcel() {
       'Token Date':t.dateKey||'', 'Token Number':t.tokenNumber||'', 'Patient Name':t.patientName||'',
       'Contact':t.patientContact||'', 'Age':t.patientAge||'', 'Gender':t.patientGender||'',
       'Blood Pressure':t.bloodPressure||'', 'Allergies':t.allergies||'', 'Medication / Past History':t.medicationHistory||'',
-      'Consultation Fee':t.fee||200, 'Payment Method':t.paymentMethod||'', 'Payment Status':t.paymentStatus||'',
+      'Consultation Fee':t.fee ?? TOKEN_FEE, 'Payment Method':t.paymentMethod||'', 'Payment Status':t.paymentStatus||'',
       'Token Status':t.status||'', 'Receipt Number':t.receiptNumber||'', 'Registered By':t.createdBy||'',
       'Prescription':rx?'Yes':'No', 'Diagnosis':rx?.patientDx||'', 'Treatment Fee':treatmentFee,
-      'Medicine Subtotal':medicineSubtotal, 'Grand Total':rx?.grand||t.fee||200,
+      'Medicine Subtotal':medicineSubtotal, 'Grand Total':rx?.grand ?? t.fee ?? TOKEN_FEE,
       'Prescription Medicines':rx?(rx.medicines||[]).map(m=>m.name).filter(Boolean).join(', '):''
     };
   });
@@ -238,6 +268,7 @@ function exportPrescriptionsExcel() {
       'Rx No': rx.rxno||'',
       'Patient Name': rx.patientName||'',
       'Treatment': rx.patientDx||'',
+      'Treatment Plan':rx.treatmentPlan||rx.notes||'',
       'Treatment Fee': Number(rx.treatmentFee)||0,
       'Medicines': medicines,
       'Payment Method': rx.paymentMethod||token?.paymentMethod||'',
@@ -278,12 +309,28 @@ function renderTokens() {
       '<div class="token-number">'+escapeTokenHtml(token.tokenNumber)+'</div>' +
       '<div class="token-patient" onclick="openPrescriptionForToken(\''+escapeTokenHtml(token.id)+'\')" style="cursor:pointer"><strong>'+escapeTokenHtml(token.patientName)+'</strong>' +
       '<span>BP: '+escapeTokenHtml(token.bloodPressure||'—')+' · Allergy: '+escapeTokenHtml(token.allergies||'—')+'</span></div>' +
-      '<div class="token-meta"><strong>₹'+TOKEN_FEE+'</strong><span>'+escapeTokenHtml(token.paymentMethod||'—')+'</span><span>'+escapeTokenHtml(statusLabel)+'</span></div>' +
+      '<div class="token-meta"><strong>₹'+(token.fee ?? TOKEN_FEE)+'</strong><span>'+escapeTokenHtml(token.paymentMethod||'—')+'</span><span>'+escapeTokenHtml(statusLabel)+'</span></div>' +
       '<button class="btn-sm token-receipt-btn" onclick="showTokenReceipt(\''+escapeTokenHtml(token.id)+'\')">Receipt</button>' +
-      '<button class="btn-sm" onclick="openPrescriptionForToken(\''+escapeTokenHtml(token.id)+'\')">Write Prescription</button>' +
+      '<button class="btn-sm" onclick="openPrescriptionForToken(\''+escapeTokenHtml(token.id)+'\')">'+(isStaff()?'View Prescription':'Write Prescription')+'</button>' +
       (status !== 'completed' && isStaff() ? '<button class="btn-sm" onclick="completeToken(\''+escapeTokenHtml(token.id)+'\')">Complete</button>' : '') +
       '</div>';
   }).join('');
+}
+
+function checkTokenPatient(){
+  const mobile = normalizeMobile(qs('tokenPatientContact')?.value);
+  const fee = qs('tokenFeeAmount');
+  const status = qs('tokenFeeStatus');
+  if(!fee || !status || !mobile){
+    if(fee) fee.textContent='₹'+TOKEN_FEE;
+    if(status) status.textContent='New patient';
+    return;
+  }
+  window._fb.getDoc(window._fb.doc(PAT_COL(), mobile)).then(snap=>{
+    const existing = snap.exists();
+    fee.textContent='₹'+(existing ? 0 : TOKEN_FEE);
+    status.textContent=existing ? 'Regular patient — no fee' : 'New patient';
+  }).catch(()=>{});
 }
 
 async function createToken() {
@@ -295,7 +342,7 @@ async function createToken() {
   const allergies = qs('tokenAllergies').value.trim();
   const medicationHistory = qs('tokenMedicationHistory').value.trim();
   const paymentMethod = qs('tokenPaymentMethod').value.trim();
-  if (!name || !contact || !bp || !medicationHistory || !paymentMethod) { showToast('Enter name, contact, BP, medication history, and payment method','err'); return; }
+  if (!name || !contact || !bp || !medicationHistory) { showToast('Enter name, contact, BP, and medication history','err'); return; }
   const btn = qs('createTokenBtn');
   btn.disabled = true; btn.textContent = 'Confirming…';
   try {
@@ -307,11 +354,16 @@ async function createToken() {
       const tokenRef = window._fb.doc(TOKEN_COL(), 'token_'+dateKey+'_'+next);
       const patientMobile = normalizeMobile(contact);
       const patientRef = window._fb.doc(PAT_COL(), patientMobile);
+      const patient = await transaction.get(patientRef);
+      const isExistingPatient = patient.exists();
+      const fee = isExistingPatient ? 0 : TOKEN_FEE;
+      const recordedPaymentMethod = isExistingPatient ? '' : paymentMethod;
+      if (!isExistingPatient && !paymentMethod) throw new Error('Enter payment method for a new patient');
       transaction.set(counterRef, {value:next, dateKey, updatedAt:window._fb.serverTimestamp()});
       transaction.set(tokenRef, {
         tokenNumber: next, dateKey, patientName:name, patientContact:contact,
-        patientAge:age, patientGender:gender, bloodPressure:bp, allergies, medicationHistory, fee:TOKEN_FEE,
-        paymentMethod, paymentStatus:'paid', status:'waiting', receiptNumber:'R-'+dateKey.replace(/-/g,'')+'-'+next,
+        patientAge:age, patientGender:gender, bloodPressure:bp, allergies, medicationHistory, fee,
+        paymentMethod:recordedPaymentMethod, paymentStatus:isExistingPatient?'not_applicable':'paid', status:'waiting', receiptNumber:'R-'+dateKey.replace(/-/g,'')+'-'+next,
         createdAt:new Date().toISOString(), createdAtServer:window._fb.serverTimestamp(),
         createdBy:window._auth.currentUser?.email||''
       });
@@ -325,6 +377,8 @@ async function createToken() {
     });
     ['tokenPatientName','tokenPatientContact','tokenPatientAge','tokenBP','tokenAllergies','tokenMedicationHistory','tokenPaymentMethod'].forEach(id => qs(id).value='');
     qs('tokenPatientGender').value='';
+    qs('tokenFeeAmount').textContent='₹'+TOKEN_FEE;
+    qs('tokenFeeStatus').textContent='New patient';
     showToast('Token '+tokenNumber+' saved');
     setTimeout(() => {
       const token = _allTokenCache.find(t => t.tokenNumber === tokenNumber && t.dateKey === tokenDateKey());
@@ -347,11 +401,21 @@ async function completeToken(id) {
 
 function openPrescriptionForToken(id) {
   const token = _allTokenCache.find(t => t.id === id) || _tokenCache.find(t => t.id === id); if (!token) return;
+  if (isStaff()) {
+    const rx = _histCache.find(r => r.tokenId === token.id && !r.isTokenOnly);
+    if (!rx) {
+      showToast('Doctor prescription is not saved for this token yet','warn');
+      return;
+    }
+    loadRx(rx.id);
+    return;
+  }
+  if(isDoctor()||isAdmin())showOldDoctorRx();
   newRxForm();
   _activeTokenId = token.id;
   const context = qs('rxTokenContext');
   if (context) {
-    context.textContent = 'Token '+token.tokenNumber+' · Patient registered and payment confirmed · ₹'+TOKEN_FEE+' paid by '+(token.paymentMethod||'—');
+    context.textContent = 'Token '+token.tokenNumber+' · '+(token.fee ? 'Consultation fee ₹'+token.fee+' paid by '+(token.paymentMethod||'—') : 'Regular patient · no consultation fee');
     context.style.display = 'block';
   }
   qs('pName').value = token.patientName || '';
@@ -376,7 +440,7 @@ function showTokenReceipt(id) {
     '<div class="receipt-line"><span>Blood Pressure</span><strong>'+escapeTokenHtml(token.bloodPressure)+'</strong></div>' +
     '<div class="receipt-line"><span>Medication History</span><strong>'+escapeTokenHtml(token.medicationHistory||'—')+'</strong></div>' +
     '<div class="receipt-line"><span>Payment Method</span><strong>'+escapeTokenHtml(token.paymentMethod||'—')+'</strong></div>' +
-    '<div class="receipt-total"><span>Consultation Fee</span><strong>₹'+TOKEN_FEE+' · PAID</strong></div>' +
+    '<div class="receipt-total"><span>Consultation Fee</span><strong>₹'+(token.fee ?? TOKEN_FEE)+(token.fee ? ' · PAID' : ' · NOT CHARGED')+'</strong></div>' +
     '<div class="receipt-foot">'+escapeTokenHtml(new Date(token.createdAt).toLocaleString('en-IN'))+'<br>Thank you for visiting Sai Dental Clinic</div>';
   qs('tokenReceiptModal').style.display='flex';
 }
@@ -455,6 +519,32 @@ function calcFollowupIso(followupStr,fromIso){
   return d.toISOString().slice(0,10);
 }
 function todayIso(){return new Date().toISOString().slice(0,10)}
+
+function getRctFollowupDays(dx){
+  const s=(dx||'').toLowerCase();
+  const m=s.match(/rct[^0-9]*([0-9]+)/);
+  const n=s.match(/root\s*canal[^\d]*(\d+)/);
+  const match = m || n;
+  const sitting = match ? parseInt(match[1],10) : null;
+  if(!sitting) return null;
+  if(sitting===1||sitting===2) return 4;
+  return null;
+}
+
+function getFollowupSuggestion(dx){
+  const days=getRctFollowupDays(dx);
+  return days ? 'After '+days+' days' : '';
+}
+
+function applyAutoFollowupFromDx(){
+  const dx=qs('pDx')?.value||'';
+  const followInput=qs('followup');
+  if(!followInput) return;
+  const existing=(followInput.value||'').trim();
+  const suggested=getFollowupSuggestion(dx);
+  if(existing || !suggested) return;
+  followInput.value=suggested;
+}
 function getPdfElement(){
   const orig=qs('rxTab');
   if(!orig)return null;
@@ -472,14 +562,20 @@ function getPdfElement(){
     const d=document.createElement('div');
     d.style.cssText='padding:2px 0;font-size:11px;color:#1a1a1a;background:transparent;border:none;min-height:16px';
     if(el.tagName==='SELECT')d.textContent=el.options[el.selectedIndex]?el.options[el.selectedIndex].text:'';
-    else d.textContent=el.value||'';
+     else d.textContent=el.value||el.placeholder||'—';
     const lbl=el.closest('.fld')?.querySelector('.flbl');
     if(lbl){
       const c=document.createElement('div');
       c.style.cssText='margin-bottom:6px';
       const lb=lbl.cloneNode(true);
       lb.style.cssText='font-size:9px;color:#6b7280;display:block;margin-bottom:1px;text-transform:uppercase;letter-spacing:.5px';
-      d.style.cssText='font-size:12px;color:#1a1a1a;padding:2px 0;border-bottom:1px solid #eee';
+       d.style.cssText='font-size:13px;color:#1a1a1a;padding:8px 12px;border-bottom:1px solid #eee;min-height:34px;line-height:1.35';
+      if(el.closest('.inline-med-history')){
+         d.style.minHeight='34px';
+         d.style.padding='8px 12px';
+        d.style.lineHeight='1.35';
+        d.style.whiteSpace='normal';
+      }
       c.append(lb,d);
       el.parentNode.replaceChild(c,el);
     }else el.parentNode.replaceChild(d,el);
@@ -507,6 +603,9 @@ function copyToClipboard(text){
 /* ═══ UI STATE ═══ */
 let rows=[], rid=0, _histCache=[], histPage=1;
 const HIST_PER=15;
+let _newRxModelEditingId=null;
+let _savingNewRxModel=false;
+let _pendingNewRxModelData=null;
 
 /* ─── Back button navigation history ─── */
 let _navHistory = [];
@@ -542,9 +641,9 @@ function showUndoToast(msg,onUndo){
 function addRow(d){
   const m=MEDS.find(x=>x.name===d.name)||{dosage:'',rate:0};
   rid++;
-  rows.push({id:rid,name:d.name||'',dosage:d.dosage||m.dosage||'',
+  rows.push({id:rid,name:d.name||'',dosage:d.preserveEmptyFields?(d.dosage||''):(d.dosage||m.dosage||''),
     freq:d.freq||'',dur:d.dur||'',
-    qty:d.qty!=null?+d.qty:1,
+    qty:d.preserveEmptyFields&&d.qty===''?'':d.qty!=null?+d.qty:1,
     rate:d.rate!=null?+d.rate:(m.rate||0),
     inst:d.inst||''});
   renderRows();
@@ -552,16 +651,16 @@ function addRow(d){
 function renderRows(){
   qs('rxBody').innerHTML=rows.map((r,i)=>`
     <tr>
-      <td style="text-align:center;color:var(--muted);font-size:12px;padding-left:8px">${i+1}</td>
-      <td><select style="width:100%" onchange="onMed(${r.id},this.value)">${medOpts(r.name)}</select></td>
-      <td><input type="text" value="${r.dosage}" style="width:100%" oninput="rc(${r.id},'dosage',this.value)"/></td>
-      <td><select style="width:100%" onchange="rc(${r.id},'freq',this.value)">${listOpts(FREQS,r.freq)}</select></td>
-      <td><select style="width:100%" onchange="rc(${r.id},'dur',this.value)">${listOpts(DURS,r.dur)}</select></td>
-      <td><input type="number" value="${r.qty}" min="1" max="999" style="width:58px" oninput="rc(${r.id},'qty',+this.value);renderRows()"/></td>
-      <td><input type="number" value="${r.rate}" min="0" step="0.5" style="width:70px" oninput="rc(${r.id},'rate',+this.value);renderRows()"/></td>
-      <td><select style="width:100%" onchange="rc(${r.id},'inst',this.value)">${listOpts(INSTS,r.inst)}</select></td>
-      <td class="amt-cell">${fmt(r.qty*r.rate)}</td>
-      <td><button class="btn-del" onclick="delRow(${r.id})" title="Remove">✕</button></td>
+       <td data-label="#" style="text-align:center;color:var(--muted);font-size:12px;padding-left:8px">${i+1}</td>
+       <td data-label="Medicine Name"><select style="width:100%" onchange="onMed(${r.id},this.value)">${medOpts(r.name)}</select></td>
+       <td data-label="Dosage"><input type="text" value="${r.dosage}" style="width:100%" oninput="rc(${r.id},'dosage',this.value)"/></td>
+       <td data-label="Frequency"><select style="width:100%" onchange="rc(${r.id},'freq',this.value)">${listOpts(FREQS,r.freq)}</select></td>
+       <td data-label="Duration"><select style="width:100%" onchange="rc(${r.id},'dur',this.value)">${listOpts(DURS,r.dur)}</select></td>
+       <td data-label="Qty"><input type="number" value="${r.qty}" min="1" max="999" style="width:58px" oninput="rc(${r.id},'qty',+this.value);renderRows()"/></td>
+       <td data-label="Rate (₹)"><input type="number" value="${r.rate}" min="0" step="0.5" style="width:70px" oninput="rc(${r.id},'rate',+this.value);renderRows()"/></td>
+       <td data-label="Instructions"><select style="width:100%" onchange="rc(${r.id},'inst',this.value)">${listOpts(INSTS,r.inst)}</select></td>
+       <td data-label="Amount (₹)" class="amt-cell">${fmt(r.qty*r.rate)}</td>
+       <td data-label=""><button class="btn-del" onclick="delRow(${r.id})" title="Remove">✕</button></td>
     </tr>`).join('');
   qs('medCount').textContent=rows.length+' item(s)';
   calcBill();
@@ -589,10 +688,13 @@ function calcBill(){
 function loadTemplate(type){
   rows=[];rid=0;
   if(type==='rct'||type==='rootcanal'){
+    const dxEl=qs('pDx');
+    if(dxEl && !dxEl.value) dxEl.value='Root Canal Treatment (RCT)';
     addRow({name:'Amoxicillin + Clavulanic Acid 625mg',freq:'Twice daily',dur:'5 days',qty:10,inst:'After food'});
     addRow({name:'Aceclofenac sp',freq:'Twice daily',dur:'3 days',qty:6,inst:'After food'});
     addRow({name:'Pantoprazole 40mg',freq:'Once daily',dur:'5 days',qty:5,inst:'Before food'});
     qs('notes').value='RCT done. Avoid chewing on treated side until numbness wears off. Maintain oral hygiene properly.';
+    applyAutoFollowupFromDx();
   } else if(type==='extraction'){
     addRow({name:'Amoxicillin 500mg',freq:'Thrice daily',dur:'5 days',qty:15,inst:'After food'});
     addRow({name:'Aceclofenac sp',freq:'Twice daily',dur:'3 days',qty:6,inst:'After food'});
@@ -633,8 +735,8 @@ function searchPatients(q){
   if(!unique.length){dd.className='pat-dropdown';return;}
   dd.innerHTML=unique.map(r=>`
     <div class="pat-opt" onclick="fillPatient('${r.id}')">
-      <div class="pat-opt-name">${r.patientName||'—'} <span style="color:var(--teal);font-size:11px">${r.rxno||''}</span></div>
-      <div class="pat-opt-sub">${r.patientContact||''} · ${r.patientDx||''} · ${r.date||''}</div>
+      <div class="pat-opt-name">${escapeHtml(r.patientName||'—')} <span style="color:var(--teal);font-size:11px">${escapeHtml(r.rxno||'')}</span></div>
+      <div class="pat-opt-sub">${escapeHtml(r.patientContact||'')} · ${escapeHtml(r.patientDx||'')} · ${escapeHtml(r.date||'')}</div>
     </div>`).join('');
   dd.className='pat-dropdown open';
 }
@@ -647,8 +749,9 @@ function fillPatient(id){
   qs('pBP').value      =rx.patientBP     ||'';
   qs('pDx').value      =rx.patientDx     ||'';
   qs('pAllergy').value =rx.patientAllergy||'';
-  if(qs('pRef'))qs('pRef').value     =rx.patientRef    ||'';
+  if(qs('pRef'))qs('pRef').value     =rx.patientOPNo||rx.patientRef||'';
   qs('pMedicationHistory').value =rx.patientMedicationHistory||'';
+  applyAutoFollowupFromDx();
   qs('patDropdown').className='pat-dropdown';
   qs('patSearchWrap').style.display='none';
   showToast('Patient loaded: '+rx.patientName);
@@ -672,17 +775,19 @@ function fillPatient(id){
 /* ─── SAVE ─── */
 async function saveRx(){
   const name=qs('pName').value.trim();
-  if(!name){showToast('Enter patient name before saving','err');return;}
-  if(!rows.length){showToast('Add at least one medicine','err');return;}
+  if(!_savingNewRxModel&&!name){showToast('Enter patient name before saving','err');return false;}
+  if(!_savingNewRxModel&&!rows.length){showToast('Add at least one medicine','err');return false;}
+  if(!_savingNewRxModel)applyAutoFollowupFromDx();
   const btn=qs('btnSave');
   btn.disabled=true;btn.classList.add('saving');
   try{
     const treatmentFee=Math.max(0,Number(qs('treatmentFee')?.value)||0);
     const grand=rows.reduce((a,r)=>a+(r.qty*r.rate),0)+treatmentFee;
+    const followupText=_savingNewRxModel?'':(qs('followup').value||'');
     let rxno,id,existing;
     if(_editingRxId){
       existing=_histCache.find(r=>r.id===_editingRxId);
-      if(!existing){showToast('Original prescription not found','err');btn.disabled=false;btn.classList.remove('saving');return;}
+      if(!existing){showToast('Original prescription not found','err');btn.disabled=false;btn.classList.remove('saving');return false;}
       rxno=existing.rxno;
       id=_editingRxId;
     }else{
@@ -694,23 +799,27 @@ async function saveRx(){
       id,rxno,
       date:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
       dateISO:new Date().toISOString(),
-      followupDate:calcFollowupIso(qs('followup').value)||'',
-      followupStatus:qs('followup').value?'pending':'',
+      prescriptionDate:_savingNewRxModel?_pendingNewRxModelData.date:(rxdata.prescriptionDate||''),
+      followupDate:calcFollowupIso(followupText)||'',
+      followupStatus:followupText?'pending':'',
       followupNotes:rxdata.followupNotes||existing?.followupNotes||[],
-      patientName:   qs('pName').value,
-      patientAge:    qs('pAge').value,
-      patientGender: qs('pGender').value,
-      patientContact:qs('pContact').value,
+      patientName:   _savingNewRxModel?_pendingNewRxModelData.patientName:qs('pName').value,
+      patientAge:    _savingNewRxModel?_pendingNewRxModelData.patientAge:qs('pAge').value,
+      patientGender: _savingNewRxModel?_pendingNewRxModelData.patientSex:qs('pGender').value,
+      patientContact:_savingNewRxModel?(_pendingNewRxModelData.patientPhone||rxdata.patientContact||''):qs('pContact').value,
        patientBP:     qs('pBP').value,
-       patientDx:     qs('pDx').value,
+       patientDx:     _savingNewRxModel?_pendingNewRxModelData.diagnosis:qs('pDx').value,
        patientAllergy:qs('pAllergy').value,
-       patientRef:    qs('pRef')?.value||'',
-       patientMedicationHistory:qs('pMedicationHistory').value,
+       patientRef:    _savingNewRxModel?_pendingNewRxModelData.opNumber:(qs('pRef')?.value||''),
+        patientOPNo:   _savingNewRxModel?_pendingNewRxModelData.opNumber:(qs('pRef')?.value||''),
+        patientMedicationHistory:qs('pMedicationHistory').value,
        tokenId:       _activeTokenId || rxdata.tokenId || '',
        treatmentFee,
       medicines:     rows.map(r=>({...r})),
-      notes:         qs('notes').value,
-      followup:      qs('followup').value,
+      notes:         _savingNewRxModel?_pendingNewRxModelData.treatmentPlan:qs('notes').value,
+      treatmentPlan: _savingNewRxModel?_pendingNewRxModelData.treatmentPlan:qs('notes').value,
+      prescriptionModel:_savingNewRxModel?'mockup-v1':(rxdata.prescriptionModel||''),
+      followup:      followupText,
       grand:         Math.round(grand),
       paid:          rxdata.paid||0,
        paymentStatus: rxdata.paymentStatus||'pending',
@@ -742,10 +851,14 @@ async function saveRx(){
     qs('btnSaveLabel').textContent='💾 Update '+rxno;
     updatePatientFromRx(rx);
     showToast('✓ '+rxno+' '+(wasNew?'saved':'updated'));
+    return true;
   }catch(e){
     showToast('Save failed: '+e.message,'err');
+    return false;
+  }finally{
+    btn.disabled=false;
+    btn.classList.remove('saving');
   }
-  btn.disabled=false;btn.classList.remove('saving');
 }
 
 /* ─── HISTORY ─── */
@@ -758,7 +871,7 @@ function filterHist(){
   const dx=qs('histFilterDx')?.value||'';
   const sort=qs('histSort')?.value||'newest';
   let list=_histCache.filter(r=>{
-    const mq=!q||[(r.patientName||''),(r.rxno||''),(r.patientDx||''),(r.patientContact||'')].some(s=>s.toLowerCase().includes(q));
+    const mq=!q||[(r.patientName||''),(r.rxno||''),(r.patientDx||''),(r.patientContact||''),(r.patientOPNo||r.patientRef||''),(r.treatmentPlan||r.notes||'')].some(s=>s.toLowerCase().includes(q));
     return mq&&(!dx||r.patientDx===dx);
   });
   if(sort==='newest')list.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||''));
@@ -779,10 +892,10 @@ function renderHistPage(list){
   }
   el.innerHTML=slice.map(r=>`
     <div class="hist-item">
-      <div onclick="duplicateRx('${r.id}')" class="hist-main">
-      <div class="hi-name">${r.patientName||'—'} <span class="hi-amt">₹${r.grand}</span>
-        <span class="hi-badge">${r.rxno||''}</span>
-        <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+r.patientAge+' yrs':''} ${r.patientGender||''}</span>
+       <div onclick="${isStaff()?`loadRx('${r.id}')`:`duplicateRx('${r.id}')`}" class="hist-main">
+      <div class="hi-name">${escapeHtml(r.patientName||'—')} <span class="hi-amt">₹${Number(r.grand)||0}</span>
+        <span class="hi-badge">${escapeHtml(r.rxno||'')}</span>
+        <span style="font-weight:400;color:var(--muted);font-size:12px">${r.patientAge?'· '+escapeHtml(r.patientAge)+' yrs':''} ${escapeHtml(r.patientGender||'')}</span>
       </div>
       <div class="hi-pay-row">
         ${payStatusBadge(r)}
@@ -792,11 +905,11 @@ function renderHistPage(list){
           <button class="btn-icon-hist btn-del-hist" onclick="event.stopPropagation();showDeleteConfirm('${r.id}')" title="Delete">✕</button>
         </span>`:''}
       </div>
-      <div class="hi-sub">${r.date||''} &nbsp;·&nbsp; ${r.patientDx||'No diagnosis'} ${r.patientContact?'· '+r.patientContact:''}</div>
-      <div class="hi-meds">${(r.medicines||[]).map(m=>m.name).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
+      <div class="hi-sub">${escapeHtml(r.date||'')} &nbsp;·&nbsp; ${escapeHtml(r.patientDx||'No diagnosis')} ${(r.patientOPNo||r.patientRef)?'· OP '+escapeHtml(r.patientOPNo||r.patientRef):''} ${r.patientContact?'· '+escapeHtml(r.patientContact):''}</div>
+      <div class="hi-meds">${(r.medicines||[]).map(m=>escapeHtml(m.name||'')).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
       </div>
-      <div class="hist-extra-actions">
-        <button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>
+       <div class="hist-extra-actions">
+         ${!isStaff()?`<button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>`:''}
         ${(r.xrays||[]).length?'<span class="hi-xray" title="X-ray attached">📷</span> ':''}<button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
     </div>`).join('');
@@ -821,10 +934,14 @@ function setFormReadOnly(ro){
   qs('tplBtns').style.display=ro?'none':'';
   qs('clearBtn').style.display=ro?'none':'';
   const banner=qs('readOnlyBanner');
-  if(banner)banner.style.display=ro?'block':'none';
-  /* Payment buttons: hide Pay for read-only, keep Receipt */
+  if(banner){
+    banner.style.display=ro?'block':'none';
+    const newRxBtn=banner.querySelector('[onclick*="newRx"]');
+    if(newRxBtn)newRxBtn.style.display=ro?'none':'';
+  }
+  /* Staff can record payments while prescription fields remain read-only */
   const payActions=qs('billPaySection')?.querySelector('.bill-pay-actions');
-  if(payActions)payActions.style.display=ro?'none':'';
+  if(payActions)payActions.style.display='';
   /* Disable all medicine row selects/inputs */
   document.querySelectorAll('#rxBody select,#rxBody input').forEach(el=>el.disabled=ro);
   /* X-ray upload */
@@ -834,6 +951,7 @@ function setFormReadOnly(ro){
 function loadRx(id){
   const isS=isStaff();
   const rx=_histCache.find(r=>r.id===id);if(!rx)return;
+  if(isDoctor()||isAdmin())showOldDoctorRx();
   qs('pName').value   =rx.patientName   ||'';
   qs('pAge').value    =rx.patientAge    ||'';
   qs('pGender').value =rx.patientGender ||'';
@@ -841,11 +959,12 @@ function loadRx(id){
   qs('pBP').value     =rx.patientBP     ||'';
   qs('pDx').value     =rx.patientDx     ||'';
   qs('pAllergy').value=rx.patientAllergy||'';
-  if(qs('pRef'))qs('pRef').value    =rx.patientRef    ||'';
+  if(qs('pRef'))qs('pRef').value    =rx.patientOPNo||rx.patientRef||'';
   qs('pMedicationHistory').value=rx.patientMedicationHistory||'';
   qs('treatmentFee').value=rx.treatmentFee||0;
-  qs('notes').value   =rx.notes         ||'';
+  qs('notes').value   =rx.treatmentPlan||rx.notes||'';
   qs('followup').value=rx.followup      ||'';
+  applyAutoFollowupFromDx();
   rows=[];rid=0;(rx.medicines||[]).forEach(m=>addRow(m));
   setFormReadOnly(isS);
   _editingRxId=id;
@@ -901,6 +1020,7 @@ function showDeleteConfirm(id){
 }
 
 async function confirmDelete(){
+  if(isStaff()){showToast('Staff cannot delete prescriptions','err');return;}
   const id=_deleteRxId;
   if(!id)return;
   const rx=_histCache.find(r=>r.id===id);
@@ -933,6 +1053,7 @@ async function confirmDelete(){
 }
 
 async function undoLastDelete(){
+  if(isStaff()){showToast('Staff cannot restore deleted prescriptions','err');return;}
   const rx=_lastDeletedRx;
   if(!rx){showToast('Nothing to undo','warn');return;}
   _lastDeletedRx=null;
@@ -950,8 +1071,13 @@ async function deleteRx(id){
 }
 
 function editRx(id){
+  if(isStaff()){showToast('Staff cannot edit prescriptions','err');return;}
   const rx=_histCache.find(r=>r.id===id);
   if(!rx){showToast('Prescription not found','err');return;}
+  if(rx.prescriptionModel==='mockup-v1'&&(isDoctor()||isAdmin())){
+    if(loadNewDoctorRx(rx))showToast('Editing '+rx.rxno+' in the new prescription model');
+    return;
+  }
   loadRx(id);
   _editingRxId=id;
   qs('btnSaveLabel').textContent='💾 Update '+rx.rxno;
@@ -1001,7 +1127,138 @@ async function exportAll(){
 }
 
 /* ─── TABS ─── */
+function setDoctorPrescriptionMode(mode){
+  const model=qs('doctorNewRxPanel');
+  const legacy=qs('legacyRxPanel');
+  const newToolbar=qs('newRxDoctorToolbar');
+  const oldToolbar=qs('oldRxDoctorToolbar');
+  if(!model||!legacy)return;
+  const showNew=mode==='new';
+  model.style.display=showNew?'block':'none';
+  legacy.style.display=showNew?'none':'block';
+  const frame=qs('doctorRxFrame');
+  if(showNew&&frame){
+    if(!frame.dataset.resizeBound){
+      frame.addEventListener('load',resizeDoctorPrescriptionFrame);
+      frame.dataset.resizeBound='1';
+    }
+    if(!frame.src.includes('v=20261022ba'))frame.src='./prescription-mockup.html?v=20261022ba';
+    else resizeDoctorPrescriptionFrame();
+  }
+  if(newToolbar)newToolbar.style.display=showNew?'flex':'none';
+  if(oldToolbar)oldToolbar.style.display=showNew?'none':'flex';
+}
+let _doctorRxFrameResizeObserver=null;
+function resizeDoctorPrescriptionFrame(){
+  const frame=qs('doctorRxFrame');
+  const doc=frame?.contentDocument;
+  const paper=doc?.querySelector('.paper');
+  if(!frame||!doc?.body||!paper)return;
+  const resize=()=>{
+    const bottomPadding=parseFloat(doc.defaultView.getComputedStyle(doc.body).paddingBottom)||0;
+    frame.style.height=Math.ceil(paper.getBoundingClientRect().bottom+doc.defaultView.scrollY+bottomPadding)+'px';
+  };
+  resize();
+  _doctorRxFrameResizeObserver?.disconnect();
+  _doctorRxFrameResizeObserver=new ResizeObserver(resize);
+  _doctorRxFrameResizeObserver.observe(doc.body);
+  _doctorRxFrameResizeObserver.observe(paper);
+}
+async function saveNewDoctorRx(){
+  const frame=qs('doctorRxFrame');
+  const getData=frame?.contentWindow?.getPrescriptionData;
+  if(typeof getData!=='function'){
+    showToast('Prescription form is still loading. Please try again.','err');
+    return;
+  }
+  let data;
+  try{
+    data=getData();
+  }catch(e){
+    showToast('Unable to read prescription form: '+e.message,'err');
+    return;
+  }
+  newRxForm();
+  _editingRxId=_newRxModelEditingId;
+  _activeTokenId=null;
+  qs('pName').value=data.patientName;
+  qs('pAge').value=data.patientAge;
+  qs('pGender').value=data.patientSex;
+  qs('pDx').value=data.diagnosis;
+  qs('notes').value=data.treatmentPlan;
+  rows=[];rid=0;
+  data.medicines.forEach(medicine=>{
+    const catalog=MEDS.find(m=>m.name===medicine.name);
+    addRow({
+      name:medicine.name,
+      qty:medicine.qty===''?'':Number(medicine.qty),
+      dosage:medicine.dosage,
+      freq:medicine.freq,
+      dur:medicine.dur,
+      preserveEmptyFields:true,
+      rate:catalog?.rate||0
+    });
+  });
+  _pendingNewRxModelData=data;
+  _savingNewRxModel=true;
+  let saved=false;
+  try{
+    saved=await saveRx();
+  }finally{
+    _savingNewRxModel=false;
+    _pendingNewRxModelData=null;
+  }
+  if(saved){
+    _newRxModelEditingId=_editingRxId;
+  }
+}
+function loadNewDoctorRx(rx){
+  const frame=qs('doctorRxFrame');
+  const setData=frame?.contentWindow?.setPrescriptionData;
+  if(typeof setData!=='function'){
+    showToast('Prescription form is still loading. Please try again.','err');
+    return false;
+  }
+  setNewRxFormData(setData,rx);
+  _newRxModelEditingId=rx.id;
+  showNewDoctorRx();
+  const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+  if(rxBtn)sw('rx',rxBtn);
+  return true;
+}
+function setNewRxFormData(setData,rx){
+  setData({
+    patientName:rx.patientName||'',
+    opNumber:rx.patientOPNo||rx.patientRef||'',
+    patientAge:rx.patientAge||'',
+    patientSex:rx.patientGender||'',
+    patientPhone:rx.patientContact||'',
+    date:rx.prescriptionDate||rx.date||'',
+    diagnosis:rx.patientDx||'',
+    treatmentPlan:rx.treatmentPlan||rx.notes||'',
+    medicines:rx.medicines||[]
+  });
+}
+function showNewDoctorRx(){
+  setDoctorPrescriptionMode('new');
+}
+function showOldDoctorRx(){
+  setDoctorPrescriptionMode('old');
+}
+function printDoctorPrescription(){
+  const print=qs('doctorRxFrame')?.contentWindow?.printPrescription;
+  if(typeof print!=='function'){
+    showToast('Prescription form is still loading. Please try again.','err');
+    return;
+  }
+  print();
+}
+
 function sw(tab,btn){
+  if(isDoctor()&&!['rx','hist'].includes(tab)){
+    showToast('Doctors can access prescriptions and history only','err');
+    return;
+  }
   const tabs=['token','rx','hist','dash','apt','pat','inv','fup'];
   const curTab = tabs.find(t => {
     const el = qs(t+'Tab');
@@ -1058,6 +1315,7 @@ async function clearAll(){
   newRxForm();
 }
 function newRxForm(){
+  if(isStaff()){showToast('Staff cannot create prescriptions','err');return;}
   if(_editingRxId){_editingRxId=null;qs('btnSaveLabel').textContent='Save Prescription';}
   _activeTokenId=null;
   const tokenContext=qs('rxTokenContext');
@@ -1090,6 +1348,7 @@ function newRxForm(){
   })();
 }
 async function repeatPreviousRx(){
+  if(isStaff()){showToast('Staff cannot create prescriptions','err');return;}
   if(!_histCache.length){showToast('No previous prescriptions found','warn');return;}
   newRxForm();
   const last=_histCache[0];
@@ -1100,15 +1359,26 @@ async function repeatPreviousRx(){
   qs('pBP').value     =last.patientBP     ||'';
   qs('pDx').value     =last.patientDx     ||'';
   qs('pAllergy').value=last.patientAllergy||'';
-  if(qs('pRef'))qs('pRef').value    =last.patientRef    ||'';
+  if(qs('pRef'))  qs('pRef').value    =last.patientOPNo||last.patientRef||'';
   qs('pMedicationHistory').value=last.patientMedicationHistory||'';
   qs('treatmentFee').value=last.treatmentFee||0;
-  qs('notes').value   =last.notes         ||'';
+  qs('notes').value   =last.treatmentPlan||last.notes||'';
   qs('followup').value=last.followup      ||'';
+  applyAutoFollowupFromDx();
   rows=[];rid=0;(last.medicines||[]).forEach(m=>addRow(m));
   showToast('Previous Rx loaded: '+last.rxno);
 }
 function newRx(){
+  if(isStaff()){showToast('Staff cannot create prescriptions','err');return;}
+  if(isDoctor()||isAdmin()){
+    _newRxModelEditingId=null;
+    showNewDoctorRx();
+    const frame=qs('doctorRxFrame');
+    if(typeof frame?.contentWindow?.resetPrescriptionForm==='function')frame.contentWindow.resetPrescriptionForm();
+    const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+    if(rxBtn)sw('rx',rxBtn);
+    return;
+  }
   newRxForm();
   const rxBtn = document.querySelector(`.tab[onclick*="newRx"]`);
   if(rxBtn) sw('rx', rxBtn);
@@ -1190,25 +1460,38 @@ document.addEventListener('click',e=>{
 /* ─── ROLE-BASED UI ─── */
 function applyRoleUI() {
   const isS = isStaff();
+  const isD = isDoctor();
   const existing = document.getElementById('sd-role-style');
   if (existing) existing.remove();
+  document.querySelectorAll('.tabs .tab').forEach(btn => { btn.style.display = ''; });
+  const oldPrescriptionBtn = qs('showOldPrescriptionBtn');
+  if (oldPrescriptionBtn) oldPrescriptionBtn.style.display = isD ? 'none' : '';
 
-  if (isS) {
-    /* Hide admin-only tabs: Dashboard, Inventory */
-    ['dash', 'inv'].forEach(t => {
+  if (isS || isD) {
+    /* Staff cannot access Dashboard; doctors only get prescription and history tabs. */
+    const hiddenTabs = isD
+      ? ['token', 'dash', 'apt', 'pat', 'inv', 'fup']
+      : ['dash', 'inv'];
+    hiddenTabs.forEach(t => {
       const btn = document.querySelector(`.tab[onclick*="'${t}'"]`);
       if (btn) btn.style.display = 'none';
     });
-    /* Hide specific admin buttons by onclick handler name */
+    if(isS){
+      const newRxBtn=document.querySelector('.tab[onclick*="newRx"]');
+      if(newRxBtn)newRxBtn.style.display='none';
+    }
+    /* Hide JSON backup controls for doctor and staff */
     ['exportAll', 'importJSON'].forEach(fn => {
       const btn = document.querySelector(`[onclick*="${fn}"]`);
       if (btn) btn.style.display = 'none';
     });
-    /* Inject CSS for read-only history */
-    const style = document.createElement('style');
-    style.id = 'sd-role-style';
-    style.textContent = '.btn-del-hist,.btn-edit-hist{display:none!important}';
-    document.head.appendChild(style);
+    if(isS){
+      /* Inject CSS for read-only history */
+      const style = document.createElement('style');
+      style.id = 'sd-role-style';
+      style.textContent = '.btn-del-hist,.btn-edit-hist{display:none!important}';
+      document.head.appendChild(style);
+    }
   } else {
     /* Show the follow-ups tab for admin/doctor too */
     const fupBtn = document.querySelector(`.tab[onclick*="'fup'"]`);
@@ -1439,8 +1722,34 @@ function printReceipt(){
 
 /* ─── DUPLICATE RX ─── */
 function duplicateRx(id){
+  if(isStaff()){showToast('Staff cannot duplicate prescriptions','err');return;}
   const rx=_histCache.find(r=>r.id===id);
   if(!rx)return;
+  if(rx.prescriptionModel==='mockup-v1'&&(isDoctor()||isAdmin())){
+    _editingRxId=null;
+    _newRxModelEditingId=null;
+    newRxForm();
+    const setData=qs('doctorRxFrame')?.contentWindow?.setPrescriptionData;
+    if(typeof setData!=='function'){
+      showToast('Prescription form is still loading. Please try again.','err');
+      return;
+    }
+    setData({
+      patientName:rx.patientName||'',
+      opNumber:rx.patientOPNo||rx.patientRef||'',
+      patientAge:rx.patientAge||'',
+      patientSex:rx.patientGender||'',
+      patientPhone:rx.patientContact||'',
+      diagnosis:rx.patientDx||'',
+      treatmentPlan:rx.treatmentPlan||rx.notes||'',
+      medicines:rx.medicines||[]
+    });
+    showNewDoctorRx();
+    sw('rx',document.querySelector(`.tab[onclick*="newRx"]`));
+    showToast('Duplicated: '+rx.rxno);
+    return;
+  }
+  if(isDoctor()||isAdmin())showOldDoctorRx();
   newRxForm();
   qs('pName').value=rx.patientName||'';
   qs('pAge').value=rx.patientAge||'';
@@ -1449,8 +1758,8 @@ function duplicateRx(id){
   qs('pBP').value=rx.patientBP||'';
   qs('pDx').value=rx.patientDx||'';
   qs('pAllergy').value=rx.patientAllergy||'';
-  if(qs('pRef'))qs('pRef').value=rx.patientRef||'';
-  qs('notes').value=rx.notes||'';
+  if(qs('pRef'))  qs('pRef').value=rx.patientOPNo||rx.patientRef||'';
+  qs('notes').value=rx.treatmentPlan||rx.notes||'';
   qs('followup').value=rx.followup||'';
   (rx.medicines||[]).forEach(m=>addRow(m));
    sw('rx',document.querySelector(`.tab[onclick*="newRx"]`));
@@ -1470,7 +1779,7 @@ function showPatientVisits(name,contact){
   visits.slice(0,10).forEach(r=>{
     html+='<div class="profile-visit" onclick="loadRx(\''+r.id+'\')">'+
       '<div class="profile-visit-top"><span class="profile-visit-rx">'+r.rxno+'</span><span class="profile-visit-date">'+r.date+'</span></div>'+
-      '<div class="profile-visit-dx">'+(r.patientDx||'—')+'</div>'+
+      '<div class="profile-visit-dx">'+escapeHtml(r.patientDx||'—')+'</div>'+
       '</div>';
   });
   html+='</div>';
@@ -1493,7 +1802,7 @@ function tokenAsPatientVisit(token) {
     patientGender:token.patientGender||'', patientBP:token.bloodPressure||'',
     patientAllergy:token.allergies||'', patientMedicationHistory:token.medicationHistory||'',
     dateISO:token.createdAt||'', date:tokenDateLabel(token.dateKey),
-    grand:token.fee||TOKEN_FEE, paid:token.paymentStatus==='paid'?(token.fee||TOKEN_FEE):0,
+    grand:token.fee ?? TOKEN_FEE, paid:token.paymentStatus==='paid'?(token.fee ?? TOKEN_FEE):0,
     patientDx:'Token consultation', medicines:[], notes:''
   };
 }
@@ -1552,14 +1861,19 @@ function renderPatientList(){
   const cnt = qs('patCount');
   if(!el)return;
   const q = (qs('patSearch')?.value||'').toLowerCase();
+  const treatmentFilterEl = qs('patTreatmentFilter');
+  const selectedTreatment = treatmentFilterEl ? treatmentFilterEl.value : '';
   const grouped = {};
   const allVisits = _histCache.concat(_allTokenCache.map(tokenAsPatientVisit));
+  const treatmentSet = new Set();
   allVisits.forEach((r, idx) => {
     let key = normalizeMobile(r.patientContact);
     if(!key){
       const nk = (r.patientName||'unknown').toLowerCase().replace(/\s+/g,'');
       key = '__name__' + nk + '__' + idx;
     }
+    const dtx = (r.patientDx||'').trim() || 'Other';
+    treatmentSet.add(dtx);
     if(!grouped[key]) grouped[key] = { key, mobile: normalizeMobile(r.patientContact), name: r.patientName||'', visits: [], totalAmt: 0, totalPaid: 0, lastDate: '', lastDx: '' };
     const p = grouped[key];
     p.visits.push(r);
@@ -1568,14 +1882,27 @@ function renderPatientList(){
     if(!p.name) p.name = r.patientName||'';
     if((r.dateISO||'') > (p.lastDate||'')){ p.lastDate = r.dateISO; p.lastDx = r.patientDx||''; }
   });
+
+  if(treatmentFilterEl){
+    const prev = selectedTreatment;
+    const treatments = [...treatmentSet].sort((a,b)=>a.localeCompare(b));
+    treatmentFilterEl.innerHTML = '<option value="">All Treatments</option>' + treatments.map(t=>'<option value="'+escapeHtmlAttr(t)+'"'+(prev===t?' selected':'')+'>'+escapeHtml(t)+'</option>').join('');
+    if(prev && !treatments.includes(prev)) treatmentFilterEl.value = '';
+  }
+
   let patients = Object.values(grouped);
   if(q){
     patients = patients.filter(p => (p.name||'').toLowerCase().includes(q) || (p.mobile||'').includes(q));
   }
+  const activeTreatment = treatmentFilterEl ? treatmentFilterEl.value : '';
+  if(activeTreatment){
+    patients = patients.filter(p=>p.visits.some(v=>((v.patientDx||'').trim() || 'Other')===activeTreatment));
+  }
   patients.sort((a,b)=>((b.lastDate||'').localeCompare(a.lastDate||'')));
   cnt.textContent = patients.length + ' patient(s)';
   if(!patients.length){
-    el.innerHTML = '<div class="pat-empty">' + (q ? 'No patients match your search' : 'No patients yet') + '</div>';
+    const msg = q ? 'No patients match your search' : (activeTreatment ? 'No patients for selected treatment' : 'No patients yet');
+    el.innerHTML = '<div class="pat-empty">' + msg + '</div>';
     return;
   }
   el.innerHTML = patients.map(p => {
@@ -1637,8 +1964,8 @@ async function renderPatientProfile(mobile){
     return '<div class="pat-visit-item" onclick="'+action+'">' +
       '<div class="pat-visit-rxno">' + (r.isTokenOnly ? 'Token '+r.tokenNumber : (r.rxno||'—')) + '</div>' +
       '<div class="pat-visit-date">' + (r.date||'') + '</div>' +
-      '<div class="pat-visit-dx">' + (r.patientDx||'—') + '</div>' +
-      '<div class="pat-visit-meds" title="' + ((r.medicines||[]).map(m=>m.name).join(', ')) + '">' + (r.medicines||[]).map(m=>m.name).join(', ') + '</div>' +
+      '<div class="pat-visit-dx">' + escapeHtml(r.patientDx||'—') + '</div>' +
+      '<div class="pat-visit-meds" title="' + escapeHtmlAttr((r.medicines||[]).map(m=>m.name||'').join(', ')) + '">' + (r.medicines||[]).map(m=>escapeHtml(m.name||'')).join(', ') + '</div>' +
       '<div class="pat-visit-amt">₹' + (r.grand||0) + '</div>' +
       '<div class="pat-visit-paid">' + (vBal>0 ? '<span style="color:var(--red)">₹' + vBal + '</span>' : '<span style="color:var(--teal)">Paid</span>') + '</div>' +
       '</div>';
@@ -1743,8 +2070,8 @@ function renderNameBasedProfile(visits){
     return '<div class="pat-visit-item" onclick="loadRx(\'' + r.id + '\')">' +
       '<div class="pat-visit-rxno">' + (r.rxno||'—') + '</div>' +
       '<div class="pat-visit-date">' + (r.date||'') + '</div>' +
-      '<div class="pat-visit-dx">' + (r.patientDx||'—') + '</div>' +
-      '<div class="pat-visit-meds" title="' + ((r.medicines||[]).map(m=>m.name).join(', ')) + '">' + (r.medicines||[]).map(m=>m.name).join(', ') + '</div>' +
+      '<div class="pat-visit-dx">' + escapeHtml(r.patientDx||'—') + '</div>' +
+      '<div class="pat-visit-meds" title="' + escapeHtmlAttr((r.medicines||[]).map(m=>m.name||'').join(', ')) + '">' + (r.medicines||[]).map(m=>escapeHtml(m.name||'')).join(', ') + '</div>' +
       '<div class="pat-visit-amt">₹' + (r.grand||0) + '</div>' +
       '<div class="pat-visit-paid">' + (vBal>0 ? '<span style="color:var(--red)">₹' + vBal + '</span>' : '<span style="color:var(--teal)">Paid</span>') + '</div>' +
       '</div>';
@@ -2002,7 +2329,20 @@ function renderDash(){
 
   /* ── DX breakdown with horizontal bars ── */
   const dxMap={};
-  all.forEach(r=>{const d=r.patientDx||'Other';dxMap[d]=(dxMap[d]||0)+1;});
+  const treatmentMap={};
+  all.forEach((r,idx)=>{
+    const d=r.patientDx||'Other';
+    dxMap[d]=(dxMap[d]||0)+1;
+
+    const contact=normalizeMobile(r.patientContact);
+    const name=((r.patientName||'').toLowerCase().replace(/\s+/g,'')||'unknown');
+    const pKey=contact ? ('mobile:'+contact) : ('name:'+name+':'+(r.id||r.tokenId||idx));
+
+    if(!treatmentMap[d]) treatmentMap[d]={visits:0,revenue:0,patients:new Set()};
+    treatmentMap[d].visits+=1;
+    treatmentMap[d].revenue+=calcGrand(r);
+    treatmentMap[d].patients.add(pKey);
+  });
   const dxSorted=Object.entries(dxMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const dxTotal=dxSorted.reduce((s,[,c])=>s+c,0)||1;
   const dxEl=qs('dashDxList');
@@ -2010,10 +2350,44 @@ function renderDash(){
     dxEl.innerHTML=dxSorted.length?dxSorted.map(([dx,cnt],i)=>{
       const pct=Math.round(cnt/dxTotal*100);
       return '<div class="dx-item" style="border-left-color:'+DASH_COLORS[i%DASH_COLORS.length]+'">'+
-        '<div><div class="dx-name">'+dx+'</div>'+
+        '<div><div class="dx-name">'+escapeHtml(dx)+'</div>'+
         '<div class="dx-bar-bg"><div class="dx-bar-fill" style="width:'+pct+'%;background:'+DASH_COLORS[i%DASH_COLORS.length]+'"></div></div></div>'+
         '<div style="text-align:right"><div class="dx-count">'+cnt+'</div><div style="font-size:10px;color:var(--muted)">'+pct+'%</div></div></div>';
     }).join(''):'<div class="empty-state"><p>No data yet</p></div>';
+  }
+
+  /* ── Treatment-wise patient stats ── */
+  const treatmentRows=Object.entries(treatmentMap).map(([name,d])=>({
+    name,
+    visits:d.visits,
+    revenue:d.revenue,
+    patients:d.patients.size
+  }));
+
+  const patEl=qs('dashTreatmentPatient');
+  if(patEl){
+    const rows=[...treatmentRows].sort((a,b)=>b.patients-a.patients).slice(0,10);
+    const max=Math.max(...rows.map(r=>r.patients),1);
+    patEl.innerHTML=rows.length?rows.map((r,i)=>{
+      const pct=Math.round((r.patients/max)*100);
+      return '<div class="dx-item" style="border-left-color:'+DASH_COLORS[i%DASH_COLORS.length]+'">'+
+        '<div><div class="dx-name">'+escapeHtml(r.name)+'</div>'+
+        '<div class="dx-bar-bg"><div class="dx-bar-fill" style="width:'+pct+'%;background:'+DASH_COLORS[i%DASH_COLORS.length]+'"></div></div></div>'+
+        '<div style="text-align:right"><div class="dx-count">'+r.patients+'</div><div style="font-size:10px;color:var(--muted)">'+r.visits+' visit(s)</div></div></div>';
+    }).join(''):'<div class="empty-state"><p>No treatment data</p></div>';
+  }
+
+  const treatmentRevEl=qs('dashTreatmentRevenue');
+  if(treatmentRevEl){
+    const rows=[...treatmentRows].sort((a,b)=>b.revenue-a.revenue).slice(0,10);
+    const max=Math.max(...rows.map(r=>r.revenue),1);
+    treatmentRevEl.innerHTML=rows.length?rows.map((r,i)=>{
+      const pct=Math.round((r.revenue/max)*100);
+      return '<div class="dx-item" style="border-left-color:'+DASH_COLORS[i%DASH_COLORS.length]+'">'+
+        '<div><div class="dx-name">'+escapeHtml(r.name)+'</div>'+
+        '<div class="dx-bar-bg"><div class="dx-bar-fill" style="width:'+pct+'%;background:'+DASH_COLORS[i%DASH_COLORS.length]+'"></div></div></div>'+
+        '<div style="text-align:right"><div class="dx-count">₹'+r.revenue+'</div><div style="font-size:10px;color:var(--muted)">'+r.patients+' patient(s)</div></div></div>';
+    }).join(''):'<div class="empty-state"><p>No treatment data</p></div>';
   }
 
   /* ── Pie chart (canvas) ── */
@@ -2037,7 +2411,7 @@ function renderDash(){
         startAngle+=sliceAngle;
         /* Legend */
         const leg=document.createElement('div');leg.className='dash-pie-legend-item';
-        leg.innerHTML='<span class="dash-pie-legend-dot" style="background:'+color+'"></span> '+dx+' ('+cnt+')';
+        leg.innerHTML='<span class="dash-pie-legend-dot" style="background:'+color+'"></span> '+escapeHtml(dx)+' ('+cnt+')';
         legend.appendChild(leg);
       });
       /* Center hole (donut effect) */
@@ -2065,7 +2439,6 @@ function saveApts(list){
   localStorage.setItem('sd-apts',JSON.stringify(list));
 }
 function showAptForm(data){
-  if(data&&isStaff()){showToast('Staff cannot edit appointments','err');return;}
   const f=qs('aptFormModal');
   qs('aptFormTitle').textContent=data?'Edit Appointment':'New Appointment';
   qs('aptName').value=data?.patientName||'';
@@ -2100,7 +2473,6 @@ function saveApt(){
   }catch(e){showToast('Failed to save appointment: '+e.message,'err');}
 }
 function deleteApt(id){
-  if(isStaff()){showToast('Staff cannot delete appointments','err');return;}
   if(!confirm('Delete this appointment?'))return;
   const list=getApts().filter(a=>a.id!==id);
   saveApts(list);
@@ -2263,7 +2635,6 @@ function selAptDay(ds){
 }
 function renderDayApts(apts,todayStr){
   const el=qs('aptDayApts');
-  const isS=isStaff();
   const isToday=_aptSelDate===todayStr;
   const pendingApts=apts.filter(a=>!a.whatsappSent);
   if(!apts.length){
@@ -2288,11 +2659,9 @@ function renderDayApts(apts,todayStr){
       '<div class="apt-info-sub">'+(a.purpose||'—')+(a.contact?' · '+a.contact:'')+'</div></div>'+
       '<div class="apt-actions">'+
       '<button onclick="shareAptWhatsApp(\''+a.id+'\')" title="'+(reminded?'Resend WhatsApp':'Send WhatsApp')+'">'+(reminded?'🔄':'📤')+'</button>'+
-      (isS?'':(
-        '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
-        '<button onclick="showAptNoteModal(\''+a.id+'\')" title="Notes">📝</button>'+
-        '<button class="apt-del" onclick="deleteApt(\''+a.id+'\')" title="Delete">🗑️</button>'
-      ))+
+       '<button onclick="showAptForm('+JSON.stringify(a).replace(/"/g,'&quot;')+')" title="Edit">✏️</button>'+
+       '<button onclick="showAptNoteModal(\''+a.id+'\')" title="Notes">📝</button>'+
+       '<button class="apt-del" onclick="deleteApt(\''+a.id+'\')" title="Delete">🗑️</button>'+
       '</div></div>';
   });
   html+='</div>';
@@ -2309,7 +2678,6 @@ function sendAllReminders(){
   showToast('✅ Marked '+pending.length+' as reminded — send individually with 📤');
 }
 function showAptNoteModal(id){
-  if(isStaff()){showToast('Staff cannot edit appointments','err');return;}
   const list=getApts();
   const a=list.find(x=>x.id===id);
   if(!a)return;
@@ -2452,6 +2820,33 @@ function getFollowups(){
       return (a.followupDate||'').localeCompare(b.followupDate||'');
     });
 }
+
+function normalizeFollowupContact(raw){
+  return String(raw||'').replace(/[^+\d]/g,'');
+}
+
+function callPatientFromFollowup(id){
+  const rx=_histCache.find(r=>r.id===id);
+  const phone=normalizeFollowupContact(rx?.patientContact);
+  if(!phone){showToast('No patient contact for this follow-up','warn');return;}
+  window.location.href='tel:'+phone;
+}
+
+function createFollowupAppointment(id){
+  const rx=_histCache.find(r=>r.id===id);
+  if(!rx){showToast('Prescription not found','err');return;}
+  const fupDate=rx.followupDate||'';
+  const purpose=(rx.patientDx||'').trim();
+  showAptForm({
+    patientName:rx.patientName||'',
+    contact:rx.patientContact||'',
+    date:fupDate||dateStr(new Date()),
+    time:'10:00',
+    purpose:purpose?`${purpose} Follow-up`:'Follow-up Visit',
+    notes:`Reminder for Rx ${rx.rxno||''}. Follow-up due ${fupDate||'scheduled'}.`
+  });
+}
+
 async function showFupNotification(){
   try{
     const snap=await window._fb.getDocs(FUP_COL());
@@ -2476,8 +2871,11 @@ async function showFupNotification(){
     if(!body)return;
     body.innerHTML='<div style="margin-bottom:12px;font-size:13px;color:var(--muted)">The following patients need follow-up:</div>'+
       due.slice(0,10).map(r=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-        '<div><strong>'+r.patientName+'</strong><br><span style="font-size:11px;color:var(--muted)">'+r.rxno+' · Follow-up: '+r.followupDate+'</span></div>'+
-        '<button class="btn-sm" onclick="closeModal(null,\'fupNotifyModal\');document.querySelector(\'.tab:nth-child(6)\').click()">View</button></div>'
+         '<div><strong>'+r.patientName+'</strong><br><span style="font-size:11px;color:var(--muted)">'+r.rxno+' · '+(r.patientContact||'No phone')+' · Follow-up: '+r.followupDate+'</span></div>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button class="btn-sm" onclick="callPatientFromFollowup(\''+r.id+'\')">📞 Call</button>'+
+          '<button class="btn-sm" onclick="closeModal(null,\'fupNotifyModal\');document.querySelector(\'.tab:nth-child(6)\').click()">View</button>'+
+        '</div></div>'
       ).join('')+
       (due.length>10?'<div style="text-align:center;padding:8px;font-size:12px;color:var(--muted)">+'+(due.length-10)+' more</div>':'')+
       '<div style="margin-top:14px;text-align:center">'+
@@ -2535,32 +2933,38 @@ async function renderFollowups(){
   const now=todayIso();
   const pending=rxItems.filter(r=>{
     if(!r._fupDate)return false;
-    if(r._fupStatus!=='done')return true;
-    return r._fupDate<=now;
+     return !isStaff() || r._fupStatus!=='done';
   }).map(r=>({...r,overdue:r._fupDate<now})).sort((a,b)=>{
       if(a.overdue&&!b.overdue)return -1;
       if(!a.overdue&&b.overdue)return 1;
       return (a._fupDate||'').localeCompare(b._fupDate||'');
     });
-  if(!pending.length){
-    el.innerHTML='<div class="fup-empty">No follow-ups pending</div>';
-    qs('fupCount').textContent='0';
-    return;
-  }
-  qs('fupCount').textContent=pending.length;
-  el.innerHTML=pending.map(r=>{
-    const isResched=r._fupStatus==='done';
-    const label=isResched?'🔄 Rescheduled':r.overdue?'🔴 Overdue':'🟡 Pending';
-    return '<div class="fup-item">'+
+   const active=pending.filter(r=>r._fupStatus!=='done');
+   const completed=pending.filter(r=>r._fupStatus==='done');
+   const visible=isStaff()?active:active.concat(completed);
+   if(!visible.length){
+     el.innerHTML='<div class="fup-empty">No follow-ups pending</div>';
+     qs('fupCount').textContent='0';
+     return;
+   }
+   qs('fupCount').textContent=active.length;
+   el.innerHTML=visible.map((r,i)=>{
+     const isDone=r._fupStatus==='done';
+     const label=isDone?'✅ Completed':r.overdue?'🔴 Overdue':'🟡 Pending';
+     const followupText=r.followup||'Follow-up';
+     const heading=isDone&&(i===0||visible[i-1]._fupStatus!=='done')?'<div style="margin:18px 0 8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">Completed Follow-ups</div>':'';
+     return heading+'<div class="fup-item">'+
       '<div class="fup-info">'+
       '<div class="fup-name">'+(r.patientName||'—')+' <span class="fup-rxno">'+r.rxno+'</span></div>'+
-      '<div class="fup-sub">Rx: '+r.date+' · Follow-up: '+r._fupDate+'</div>'+
+       '<div class="fup-sub">Rx: '+r.date+' · 📞 '+(r.patientContact||'No phone')+' · Follow-up: '+r._fupDate+' · '+followupText+'</div>'+
       (r._fupNotes?.length?'<div class="fup-notes">'+
         r._fupNotes.slice(-2).map(n=>'<div class="fup-note"><span class="fup-note-by">'+n.by+'</span> '+n.note+' <span class="fup-note-at">'+new Date(n.at).toLocaleDateString('en-IN')+'</span></div>').join('')+
         '</div>':'')+
       '</div>'+
       '<div class="fup-actions">'+
       '<span class="fup-status">'+label+'</span>'+
+      '<button class="btn-sm" onclick="callPatientFromFollowup(\''+r.id+'\')">📞 Call</button>'+
+      '<button class="btn-sm" onclick="createFollowupAppointment(\''+r.id+'\')">📅 Book</button>'+
       '<button class="btn-sm" onclick="loadRx(\''+r.id+'\')">👁️ View</button>'+
       '<button class="btn-sm" onclick="showFupNote(\''+r.id+'\')">📝 Note</button>'+
       '</div></div>';
@@ -2587,7 +2991,7 @@ async function showFupNote(id){
 async function saveFupNote(){
   const id=qs('fupNoteModal').dataset.rxId;
   const note=qs('fupNoteText').value.trim();
-  const status=qs('fupNoteStatus').value;
+   const status=qs('fupNoteStatus').value;
   if(!note&&status!=='done'){showToast('Enter a note or mark as done','err');return;}
   const rx=_histCache.find(r=>r.id===id);
   if(!rx){showToast('Prescription not found','err');return;}
@@ -2595,7 +2999,7 @@ async function saveFupNote(){
     const ref=window._fb.doc(FUP_COL(),id);
     const snap=await window._fb.getDoc(ref);
     const data=snap.exists()?snap.data():{notes:[],status:'pending'};
-    data.notes.push({by:qs('userEmail').textContent,note:note||'(Marked done)',at:new Date().toISOString()});
+     data.notes.push({by:qs('userEmail').textContent,note:note||'(Marked done)',at:new Date().toISOString()});
     /* Reschedule? */
     const resched=qs('fupRescheduleChk').checked;
     if(resched&&status==='done'){
@@ -2611,6 +3015,11 @@ async function saveFupNote(){
     renderFollowups();
     showToast('Follow-up updated');
   }catch(e){showToast('Failed to save: '+e.message,'err');}
+}
+function completeFollowup(){
+  qs('fupNoteStatus').value='done';
+  if(!qs('fupNoteText').value.trim())qs('fupNoteText').value='Follow-up completed';
+  saveFupNote();
 }
 
 /* ─── X-RAY / SCAN UPLOAD ─── */
@@ -2748,6 +3157,7 @@ waitFB(()=>{
 
       /* Fetch user role (normalize email to lowercase) */
       _currentRole = await getUserRole(user.email.toLowerCase());
+      setDoctorPrescriptionMode(isDoctor()||isAdmin()?'new':'old');
       qs('appMain').style.display='block';
       startTokenListener();
 
@@ -2757,7 +3167,7 @@ waitFB(()=>{
       roleBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500;margin-left:6px';
       roleBadge.style.background = isStaff() ? '#f59e0b' : 'var(--teal)';
       roleBadge.style.color = '#fff';
-      roleBadge.textContent = isStaff() ? 'STAFF' : 'ADMIN';
+      roleBadge.textContent = isStaff() ? 'STAFF' : isDoctor() ? 'DOCTOR' : 'ADMIN';
       const existingBadge = document.getElementById('roleBadge');
       if (existingBadge) existingBadge.remove();
       qs('userEmail').after(roleBadge);

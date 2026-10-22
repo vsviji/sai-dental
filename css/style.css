@@ -27,6 +27,15 @@ body{font-family: 'DM Sans', system-ui, -apple-system, sans-serif;background:var
 .login-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
 .login-fld{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;text-align:left}
 .login-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:500}
+.password-input-wrap{position:relative;display:flex;align-items:center}
+.password-input-wrap input{padding-right:46px}
+.password-toggle{position:absolute;right:6px;display:grid;place-items:center;width:34px;height:34px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer}
+.password-toggle:hover{background:var(--teal-l);color:var(--teal-d)}
+.password-toggle:focus-visible{outline:2px solid var(--teal-m);outline-offset:1px}
+.password-toggle svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.password-toggle .eye-hide{display:none}
+.password-toggle[aria-pressed="true"] .eye-show{display:none}
+.password-toggle[aria-pressed="true"] .eye-hide{display:block}
 .login-btn{width:100%;background:var(--teal);color:#fff;border:none;padding:12px;border-radius:var(--r);font-size:14px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;margin-top:8px;transition:background .2s}
 .login-btn:hover{background:var(--teal-d)}
 .login-btn:disabled{opacity:.6;cursor:not-allowed}
@@ -96,6 +105,8 @@ body{font-family: 'DM Sans', system-ui, -apple-system, sans-serif;background:var
 
 /* ── FORM FIELDS ── */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+.rx-patient-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+#rxTab .patient-med{grid-column:span 2}
 .fld{display:flex;flex-direction:column;gap:5px}
 .flbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:500}
 input,select,textarea{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:8px 12px;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
@@ -186,8 +197,7 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 .hi-xray{cursor:help;opacity:.8}
 .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
 .empty-state p{font-size:14px}
-.hist-hover-actions{display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .2s}
-.hist-item:hover .hist-hover-actions{opacity:1}
+.hist-hover-actions{display:flex;align-items:center;gap:4px}
 .btn-icon-hist{width:26px;height:26px;border:1px solid var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;transition:all .2s;background:var(--surface);font-family:'DM Sans',sans-serif;padding:0}
 .btn-edit-hist{color:var(--teal);border-color:var(--teal-m)}
 .btn-edit-hist:hover{background:var(--teal);color:#fff;border-color:var(--teal)}
@@ -230,7 +240,16 @@ td select:focus,td input:focus{border-color:var(--teal-m);box-shadow:0 0 0 2px r
 
 /* ── PRINT ── */
 @media print{
-  .inline-med-history{display:grid!important;grid-template-columns:max-content 1fr!important;align-items:center!important;gap:8px!important}
+  #rxTab .pgrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+  #rxTab .pgrid input,#rxTab .pgrid select{font-size:13px;padding:8px 12px;min-height:34px}
+  #rxTab .patient-med{grid-column:span 2}
+  #rxTab .inline-med-history{display:flex;flex-direction:column;gap:5px}
+  #rxTab .clinic-meta-strip{grid-template-columns:1.7fr 1.3fr .8fr}
+  #rxTab .clinic-meta-strip .mval{font-size:11px}
+  #rxTab .doc-strip>div:first-child{min-width:0;flex:1}
+  #rxTab .clinic-phones{white-space:nowrap}
+  #rxTab .doc-deg{display:block!important;font-size:0;letter-spacing:0;white-space:nowrap!important;overflow:visible!important;transform:none;width:100%}
+  #rxTab .doc-deg::after{content:'BDS, FDS (Endodontics)  |  Reg No: TNDC-31721';font-size:10px;letter-spacing:0;white-space:nowrap}
   body{background:#fff}
   .topnav,.tabs,.action-bar,.tbl-foot,.btn-del,.no-print,
    #histTab,#xrayCard,.sync-bar,.offline-banner,.login-overlay,.pwa-banner,
@@ -267,7 +286,11 @@ body.pdf-mode [id^="rxTab"] .action-bar,
 body.pdf-mode [id^="rxTab"] .tbl-foot,
 body.pdf-mode [id^="rxTab"] .btn-del,
 body.pdf-mode [id^="rxTab"] .no-print{display:none!important}
-body.pdf-mode [id^="rxTab"] .inline-med-history{display:grid!important;grid-template-columns:max-content 1fr!important;align-items:center!important;gap:8px!important}
+body.pdf-mode [id^="rxTab"] .pgrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+body.pdf-mode [id^="rxTab"] .patient-med{grid-column:span 2}
+body.pdf-mode [id^="rxTab"] .doc-strip>div:first-child{min-width:0;flex:1}
+body.pdf-mode [id^="rxTab"] .doc-deg{display:block!important;font-size:0;letter-spacing:0;white-space:nowrap!important;overflow:visible!important;transform:none;width:100%}
+body.pdf-mode [id^="rxTab"] .doc-deg::after{content:'BDS, FDS (Endodontics)  |  Reg No: TNDC-31721';font-size:10px;letter-spacing:0;white-space:nowrap}
 body.pdf-mode [id^="rxTab"] .card,
 body.pdf-mode [id^="rxTab"] .clinic-card{box-shadow:none;border:1px solid #ccc}
 body.pdf-mode [id^="rxTab"] thead tr,
@@ -478,10 +501,21 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 .btn-sm:hover{background:var(--surf2)}
 
 /* Keep the prescription table readable while reducing row height. */
-#rxTab .tbl-scroll table{min-width:840px;font-size:12px}
-#rxTab .tbl-scroll th{padding:7px 5px}
+#rxTab .tbl-scroll table{min-width:0;width:100%;table-layout:fixed;font-size:12px}
+#rxTab .tbl-scroll th{padding:8px 8px;font-size:13px;letter-spacing:.2px}
 #rxTab .tbl-scroll td{padding:4px 4px}
-#rxTab .tbl-scroll td select,#rxTab .tbl-scroll td input[type=text],#rxTab .tbl-scroll td input[type=number]{padding:4px 5px;font-size:11px}
+#rxTab .tbl-scroll td select,#rxTab .tbl-scroll td input[type=text],#rxTab .tbl-scroll td input[type=number]{padding:8px 12px;font-size:13px}
+#rxTab .tbl-scroll td select{padding-right:28px}
+#rxTab .tbl-scroll th:nth-child(1),#rxTab .tbl-scroll td:nth-child(1){width:4%!important}
+#rxTab .tbl-scroll th:nth-child(2),#rxTab .tbl-scroll td:nth-child(2){width:22%!important}
+#rxTab .tbl-scroll th:nth-child(3),#rxTab .tbl-scroll td:nth-child(3){width:10%!important}
+#rxTab .tbl-scroll th:nth-child(4),#rxTab .tbl-scroll td:nth-child(4){width:14%!important}
+#rxTab .tbl-scroll th:nth-child(5),#rxTab .tbl-scroll td:nth-child(5){width:12%!important}
+#rxTab .tbl-scroll th:nth-child(6),#rxTab .tbl-scroll td:nth-child(6){width:7%!important}
+#rxTab .tbl-scroll th:nth-child(7),#rxTab .tbl-scroll td:nth-child(7){width:9%!important}
+#rxTab .tbl-scroll th:nth-child(8),#rxTab .tbl-scroll td:nth-child(8){width:13%!important}
+#rxTab .tbl-scroll th:nth-child(9),#rxTab .tbl-scroll td:nth-child(9){width:7%!important}
+#rxTab .tbl-scroll th:nth-child(10),#rxTab .tbl-scroll td:nth-child(10){width:2%!important}
 #rxTab .tbl-scroll td:nth-child(5),#rxTab .tbl-scroll th:nth-child(5){min-width:86px;white-space:nowrap}
 #rxTab .tbl-scroll td:nth-child(9),#rxTab .tbl-scroll th:nth-child(9){min-width:78px;white-space:nowrap}
 
@@ -498,7 +532,7 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 .token-date-picker{width:auto;max-width:145px;padding:6px 8px;font-size:12px;margin-left:10px}
 .token-export-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
 .token-export-toolbar input{width:auto;padding:7px 9px;font-size:12px}.token-export-toolbar .flbl{color:var(--teal-d);margin-right:4px}.token-export-sep{font-size:12px;color:var(--muted)}
-.inline-med-history{display:grid;grid-template-columns:max-content 1fr;align-items:center;gap:8px}.inline-med-history .flbl{white-space:nowrap}
+.inline-med-history{display:flex;flex-direction:column;gap:5px}.inline-med-history .flbl{white-space:normal}
 .token-form-grid{grid-template-columns:repeat(4,minmax(140px,1fr))}
 .token-fee-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--border);margin-top:18px;padding-top:16px}
 .token-fee-row strong{font-size:20px;color:var(--teal-d);margin-left:10px}.token-paid{font-size:10px;text-transform:uppercase;color:var(--teal);background:var(--teal-l);padding:3px 8px;border-radius:10px;margin-left:8px;font-weight:600}
@@ -537,6 +571,8 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
 
 /* ── RESPONSIVE TWEAKS ── */
 @media(max-width:620px){
+  #rxTab .pgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #doctorRxFrame{height:142vw}
   .topnav{flex-direction:column;align-items:stretch}
   .tabs{overflow-x:auto;flex-wrap:nowrap;gap:4px;padding-bottom:4px;order:99;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
   .tabs::-webkit-scrollbar{display:none}
@@ -555,6 +591,21 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
   .dental-grid{grid-template-columns:repeat(4,1fr)}
   .clinic-meta-strip{grid-template-columns:1fr}
   table{min-width:unset}
+  #rxTab .tbl-scroll{overflow:visible}
+  #rxTab .tbl-scroll table{display:block;min-width:0;width:100%;table-layout:auto}
+  #rxTab .tbl-scroll thead{display:none}
+  #rxTab .tbl-scroll tbody{display:block}
+  #rxTab .tbl-scroll tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px 8px;border-bottom:1px solid var(--border)}
+  #rxTab .tbl-scroll tbody tr:last-child{border-bottom:none}
+  #rxTab .tbl-scroll tbody td{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:6px;padding:3px 0;border:0!important;width:auto!important;min-width:0!important;white-space:normal!important}
+  #rxTab .tbl-scroll tbody td::before{content:attr(data-label);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+  #rxTab .tbl-scroll tbody td:first-child{grid-column:1/-1;display:block;padding-bottom:2px}
+  #rxTab .tbl-scroll tbody td:first-child::before{display:inline;margin-right:6px}
+  #rxTab .tbl-scroll tbody td:nth-child(2),#rxTab .tbl-scroll tbody td:nth-child(8){grid-column:1/-1}
+  #rxTab .tbl-scroll tbody td input,#rxTab .tbl-scroll tbody td select{width:100%!important;min-width:0;font-size:13px;padding:8px 12px}
+  #rxTab .tbl-scroll tbody td select{padding-right:28px}
+  #rxTab .tbl-scroll tbody td:nth-child(9){justify-content:space-between}
+  #rxTab .tbl-scroll tbody td:nth-child(9)::before{margin-right:auto}
   .sync-bar .sync-stats{width:100%;order:2}
   .user-pill{margin-left:0}
   .action-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -563,3 +614,16 @@ body.pdf-mode [id^="rxTab"] td{font-size:10px!important;padding:4px!important;wh
   .toast{right:12px;left:12px;max-width:unset;bottom:12px;text-align:center}
 }
 
+#doctorRxFrame{display:block;width:100%;height:min(1240px,142vw);border:0;background:#fff}
+
+@media print{
+  @page{size:A4 portrait;margin:0}
+  body.doctor-rx-print{zoom:1!important;margin:0!important;padding:0!important;background:#fff!important}
+  body.doctor-rx-print #appMain{display:block!important;width:210mm!important;max-width:none!important;margin:0!important;padding:0!important}
+  body.doctor-rx-print #appMain>:not(#rxTab){display:none!important}
+  body.doctor-rx-print #rxTab{display:block!important;width:210mm!important;margin:0!important;padding:0!important}
+  body.doctor-rx-print #rxTab>:not(#doctorNewRxPanel){display:none!important}
+  body.doctor-rx-print #doctorNewRxPanel{display:block!important;width:210mm!important;height:297mm!important;margin:0!important;padding:0!important}
+  body.doctor-rx-print #newRxDoctorToolbar{display:none!important}
+  body.doctor-rx-print #doctorRxFrame{display:block!important;width:210mm!important;height:297mm!important;border:0!important}
+}

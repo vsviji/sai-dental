@@ -83,6 +83,14 @@ Your Firebase project must allow your GitHub Pages domain:
 2. Open your project → **Authentication** → **Settings** → **Authorized domains**
 3. Click **Add domain** and add: `YOUR_USERNAME.github.io`
 
+### Step 7 — Secure Firebase before using real patient data
+1. In Firebase Authentication, disable public user sign-up and create accounts only for approved clinic staff and doctors.
+2. Store each account's role in `users/{lowercase-email}` with role `admin`, `doctor`, or `staff`.
+3. Publish the repository's `firestore.rules` and `storage.rules` from Firebase Console → Firestore Database → Rules and Storage → Rules. GitHub Pages does not deploy these rules.
+4. Add only the actual website hostnames (including a custom domain, if used) to Firebase Authentication's authorized domains.
+5. Review the Firebase API key's referrer/API restrictions. The Firebase web config is visible to every site visitor; database and storage security must come from Firebase rules, not from hiding the key.
+6. Never put patient records, exports, credentials, or service-account keys in the GitHub repository. Treat a public GitHub repository as publicly readable, and use HTTPS for every clinic login.
+
 ---
 
 ## 📲 Making It PWA Installable

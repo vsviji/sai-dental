@@ -1,14 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /xrays/{rxId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && isAdmin();
+    function hasRole(role) {
+      return request.auth != null
+        && request.auth.token.email != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email.lower()))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email.lower())).data.role == role;
+    }
+    function isAuthorized() {
+      return hasRole('admin') || hasRole('doctor') || hasRole('staff');
+    }
+    function isAdmin() {
+      return hasRole('admin');
     }
 
-    function isAdmin() {
-      return firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email.lower()))
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email.lower())).data.role == 'admin';
+    match /xrays/{rxId}/{fileName} {
+      allow read: if isAuthorized();
+      allow write: if request.auth != null && isAdmin();
     }
   }
 }

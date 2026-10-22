@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sai Dental Clinic — Prescription Model</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px;background:#eef3f5;color:#17243c;font:14px/1.45 Verdana,Geneva,sans-serif}
+  .toolbar{max-width:820px;margin:0 auto 14px;display:flex;align-items:center;justify-content:space-between;color:#526174;font-size:13px}
+  .toolbar button{border:1px solid #2544d2;border-radius:5px;background:#fff;color:#1641ce;padding:6px 10px;font:600 12px Verdana,Geneva,sans-serif;cursor:pointer}
+  .paper{position:relative;width:min(820px,100%);min-height:0;margin:auto;padding:28px 34px 0;background:#fff;overflow:hidden;border:1px solid #d8e1e8;box-shadow:0 8px 28px #1d33441c}
+  .paper:before{content:"";position:absolute;z-index:0;top:0;left:0;right:0;height:15px;background:#83e5f0}
+  .paper:after{content:"";position:absolute;z-index:0;bottom:0;left:0;right:0;height:15px;background:#172fd1}
+  .content{position:relative;z-index:1}
+  .header{display:grid;grid-template-columns:132px 1fr 195px;gap:14px;align-items:center;padding:8px 0 18px;border-bottom:2px dashed #4263df}
+  .logo{width:118px;height:118px;object-fit:cover;border-radius:50%;border:2px solid #bdeff1}
+  .brand{display:flex;align-items:baseline;gap:.3em;font-size:clamp(21px,1.9vw,23px);line-height:1.05;font-weight:800;letter-spacing:.2px;color:#1441d5;white-space:nowrap}
+  .brand-clinic{color:#e620bd}
+  .doctor{margin-top:10px;font-weight:700;color:#1644ce}
+  .credentials{font-size:12px;margin-top:3px}
+  .specialty{font-weight:700;color:#1644ce}
+  .reg{font-size:12px;margin-top:5px;color:#1644ce}
+  .contacts{display:grid;gap:9px;min-width:0;color:#1240c8;font-weight:700;font-size:13px}
+  .contact-line{display:flex;gap:8px;align-items:center}
+  .contact-line>span:last-child{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+  .contact-icon{width:24px;height:24px;border:1.5px solid currentColor;border-radius:50%;display:grid;place-items:center;flex:none}
+  .contact-icon svg{width:14px;height:14px;display:block}
+  .contact-icon.instagram{color:#c13584}
+  .contact-icon.youtube{color:#e62117}
+  .contact-link{color:inherit;text-decoration:none}
+  .contact-link:hover{text-decoration:underline}
+  .addresses{display:grid;grid-template-columns:1fr 1fr;margin:15px 0 19px}
+  .address{padding:4px 18px 6px 42px;position:relative;font-size:13px}
+  .address+ .address{border-left:1px solid #6274dc}
+  .address:before{content:"◆";position:absolute;left:9px;top:5px;color:#1250dc;font-size:19px}
+  .address.pink:before{color:#e51db8}
+  .address-title{font-weight:800;color:#1240c8;margin-bottom:3px}
+  .pink .address-title{color:#d915ab}
+  .hours{margin-top:7px;font-weight:700}
+  .patient{margin:12px 8px 14px;color:#143bc4;font-weight:700}
+  .patient-line{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 16px;margin:9px 0}
+  .patient-field{display:flex;align-items:baseline;gap:6px;min-width:0}
+  .patient-field label{white-space:nowrap}
+  .patient-field .fill{width:100%;flex:1}
+  .patient-field.age-sex-field .fill{min-width:0}
+  .patient-field.age-sex-field label:nth-of-type(2){margin-left:4px}
+  .fill{height:22px;min-width:0;flex:1}
+  .patient-input{width:100%;height:22px;border:0;border-radius:0;outline:0;background:transparent;color:inherit;font:inherit;font-weight:400;padding:1px 3px}
+  .paper :focus,.paper :focus-visible,.paper :active{outline:none!important;box-shadow:none!important;-webkit-tap-highlight-color:transparent}
+  .paper ::selection{background:transparent!important;color:inherit}
+  .paper input:-webkit-autofill,.paper input:-webkit-autofill:hover,.paper input:-webkit-autofill:focus,.paper input:-webkit-autofill:active{ -webkit-box-shadow:0 0 0 1000px #fff inset!important;-webkit-text-fill-color:inherit!important;caret-color:inherit;transition:background-color 99999s ease-out 0s}
+  .paper input:autofill{box-shadow:0 0 0 1000px #fff inset!important;color:inherit!important;caret-color:inherit}
+  .paper .rx-select:focus,.paper .rx-select:focus-visible{border-color:#ccd4e3!important}
+  .paper .rx-select:hover,.paper .rx-select:active{background:#fff!important}
+  .short{max-width:210px}
+  .op{width:150px}
+  .age{max-width:220px}
+  .age-sex{display:flex;align-items:baseline;flex:0 1 110px;min-width:72px}
+  .age-sex .patient-input{width:auto;flex:1 1 0;min-width:0}
+  .age-sex .patient-input:first-child{max-width:48px}
+  .age-sex .patient-input:last-child{max-width:42px}
+  .age-sex-separator{width:4px;flex:none}
+  .date{max-width:245px}
+  .medicine-name{display:block;min-height:34px}
+  .suggestion-control{position:relative;min-width:0}
+  .suggestion-control{display:block;width:100%}
+  .suggestion-control{z-index:3}
+  .suggestion-options{position:absolute;z-index:10;top:100%;left:0;right:0;max-height:190px;overflow:auto;border:1px solid #ccd4e3;border-radius:4px;background:#fff;box-shadow:0 3px 10px #17243c20}
+  .suggestion-options[hidden]{display:none}
+  .suggestion-option{display:block;width:100%;border:0;background:#fff;color:#202a3a;text-align:left;padding:7px 8px;font:12px Verdana,Geneva,sans-serif;cursor:pointer}
+  .suggestion-option:hover,.suggestion-option:focus,.suggestion-option:active{outline:none;background:#fff;color:#202a3a;box-shadow:none}
+  .rxbox{border:2px solid #e729c0;border-radius:20px;overflow:visible;margin:12px 0 22px}
+  .rx-title{display:flex;align-items:center;gap:12px;padding:9px 14px 4px;color:#e729c0}
+  .rx-mark{font-family:Georgia,serif;font-size:42px;line-height:1}
+  .rx-caption{font-size:15px;font-weight:800;letter-spacing:1px;color:#1641ce}
+  .rx-title .add-row{margin-left:auto}
+  .add-row,.remove-row{border:1px solid #2544d2;border-radius:5px;background:#fff;color:#1641ce;padding:6px 10px;font:600 12px Verdana,Geneva,sans-serif;cursor:pointer}
+  .add-row:hover,.remove-row:hover{background:#f1f4ff}
+  table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;color:#202a3a}
+  th,td{border:0;border-right:1.5px solid #2544d2;border-bottom:1.5px solid #2544d2;padding:9px 8px;text-align:left;vertical-align:top}
+  thead th{border-top:1.5px solid #2544d2}
+  th:last-child,td:last-child{border-right:0}
+  tbody tr:last-child td{border-bottom:0}
+  th{text-align:center}
+  th{background:#f1f4ff;color:#1d2b51;font-size:12px;text-transform:uppercase;letter-spacing:.45px}
+  td{height:62px;font-size:13px}
+  th:first-child{width:43%}
+  th:nth-child(2){width:12%}
+  th:nth-child(3){width:14%}
+  th:nth-child(4){width:16%}
+  th:nth-child(5){width:15%}
+  .rx-select{width:100%;min-height:34px;border:1px solid #ccd4e3;border-radius:4px;background:#fff;color:#202a3a;padding:5px 6px;font:12px Verdana,Geneva,sans-serif}
+  .remove-row{margin-top:5px;padding:3px 7px;border-color:#e0a5a5;color:#a63737}
+  .empty-table{height:26px;padding:8px;text-align:center;color:#8792a6;font-size:12px;font-style:italic}
+  .diagnosis{margin:0 10px}
+  .write-line{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center;margin:12px 0;font-weight:700}
+  .plan-input,.diagnosis-input{display:block;width:100%;height:34px;min-width:0;min-height:0;border:0;border-radius:0;outline:0;background:transparent;color:inherit;font:400 14px/1.4 Verdana,Geneva,sans-serif;padding:0 3px;resize:none}
+  .signature{height:90px;display:flex;justify-content:flex-end;align-items:flex-end;padding:0 28px 12px}
+  .signature-box{width:210px;text-align:center;border-top:1px solid #7b8494;padding-top:7px;font-size:12px;color:#455168}
+  .footer-art{margin:0 -34px 0;height:78px;flex:none;background:linear-gradient(170deg,transparent 35%,#d9f78b 36%,#84db45 70%,#42bc37 71%);position:relative;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .footer-art:before{content:"";position:absolute;left:0;right:0;bottom:0;height:20px;background:#3dbb34;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .heart{position:absolute;left:50%;top:31px;transform:translateX(-50%);color:#e829bc;font-size:28px}
+  .footer-note{position:absolute;left:0;right:0;bottom:4px;text-align:center;color:#fff;font-size:10px;letter-spacing:.4px}
+  #printPages{display:none}
+  @media screen and (max-width:700px){
+    body{padding:10px}
+    .paper{padding:24px 16px 0}
+    .header{grid-template-columns:70px 1fr;gap:10px}
+    .logo{width:66px;height:66px}
+    .brand{font-size:clamp(19px,5vw,21px);letter-spacing:0;gap:.2em}
+    .contacts{grid-column:1/-1;grid-template-columns:1fr 1fr;font-size:11px}
+    .addresses{grid-template-columns:1fr}
+    .address+.address{border-left:0;border-top:1px solid #d7dff2;margin-top:9px;padding-top:12px}
+    .patient{margin-left:0;margin-right:0;font-size:12px}
+    .short,.op,.age,.date{max-width:none}
+    th,td{padding:6px 4px;font-size:10px}
+    th{font-size:9px}
+    td{height:58px}
+    .rx-select{font-size:9px;padding:4px 2px}
+    .add-row{font-size:10px;padding:5px}
+    .footer-art{margin-left:-16px;margin-right:-16px}
+  }
+  @media print{
+    @page{size:A4 portrait;margin:0}
+    html,body,.paper,.content,.header,.addresses,.rxbox,table,.diagnosis,.signature,.footer-art{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{padding:0;background:#fff}
+    .toolbar{display:none}
+    .paper{width:210mm;height:297mm;aspect-ratio:auto;max-width:none;min-height:0;margin:0;border:0;box-shadow:none;padding:9mm 10mm 0;overflow:hidden;break-after:page}
+    .content{height:100%;display:flex;flex-direction:column}
+    .header{grid-template-columns:32mm minmax(0,1fr) 50mm}
+    .brand{font-size:22px;gap:.25em}
+    .contacts{font-size:10px}
+    .contact-line>span:last-child{overflow-wrap:anywhere;word-break:break-word}
+    .paper:before,.paper:after,.footer-art,.footer-art:before,.heart,.footer-note{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+    .no-print{display:none!important}
+    .rx-select{appearance:none;-webkit-appearance:none;border:0;border-radius:0;padding:0;background:transparent;color:#202a3a}
+    td{height:43px;padding:4px 5px}
+    .rx-select{min-height:24px}
+    .suggestion-options{display:none!important}
+    th{background:#f1f4ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .patient-input{height:auto;border:0!important;border-radius:0;padding:0;background:transparent;outline:0;color:#143bc4;-webkit-appearance:none;appearance:none}
+    .patient-input::placeholder{color:transparent}
+    .patient-input:focus{border:0;outline:0}
+    .plan-input,.diagnosis-input{height:34px;min-height:34px;resize:none;border:0!important;border-radius:0;padding:0 3px;background:transparent;outline:0;color:#17243c;overflow:hidden}
+    .plan-input:focus,.diagnosis-input:focus{outline:0}
+    .signature{margin-top:auto}
+    .footer-art{margin:0 -10mm;height:24mm}
+    body.print-pagination>main.paper{display:none!important}
+    body.print-pagination #printPages{display:block!important}
+    #printPages .paper{break-after:page;page-break-after:always}
+    #printPages .paper:last-child{break-after:auto;page-break-after:auto}
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar"><strong>Prescription</strong><span id="standaloneNote">Standalone prescription model</span><span><button class="no-print" id="standaloneSave" type="button" onclick="saveStandalonePrescription()">💾 Save</button> <button class="no-print" id="standalonePrint" type="button" onclick="printPrescription()">🖨️ Print</button></span></div>
+  <main class="paper">
+    <div class="content">
+      <header class="header">
+        <img class="logo" src="./icons/logo.jpeg" alt="Sai Dental Clinic logo"/>
+        <div>
+          <div class="brand" aria-label="SAI DENTAL CLINIC"><span>SAI DENTAL</span><span class="brand-clinic">CLINIC</span></div>
+          <div class="credentials specialty">Mayiladuthurai &amp; Nidur Root Canal and Implant Center</div>
+          <div class="doctor">Dr. S.K. Srinivas <span class="credentials">B.D.S., F.D.S. (ENDO)</span></div>
+          <div class="credentials">Dental Surgeon (Fellowship in Root Canal Treatment)</div>
+          <div class="reg">Reg. No. 31721</div>
+        </div>
+        <div class="contacts">
+          <div class="contact-line"><span class="contact-icon">☎</span><span>89031 57201<br/>81228 35737</span></div>
+          <div class="contact-line"><span class="contact-icon instagram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="18" cy="6" r="1" fill="currentColor" stroke="none"/></svg></span><span><a class="contact-link" href="https://www.instagram.com/sai.dental_clinic/" target="_blank" rel="noopener noreferrer">sai.dental_clinic</a></span></div>
+          <div class="contact-line"><span class="contact-icon">⌘</span><span>www.saidentalmayiladuthurai.com</span></div>
+          <div class="contact-line"><span class="contact-icon youtube" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4L15.8 12l-6.2 3.6Z"/></svg></span><span><a class="contact-link" href="https://www.youtube.com/@SAIDENTALCLINICDrSrinivas" target="_blank" rel="noopener noreferrer">SAIDENTALCLINICDrSrinivas</a></span></div>
+        </div>
+      </header>
+
+      <section class="addresses">
+        <div class="address pink">
+          <div class="address-title">MAYILADUTHURAI ADDRESS:</div>
+          Kenikarai Bus Stop Opposite,<br/>1st Floor, Near Periyar Silai,<br/>Thiruvarur Main Road,
+          <div class="hours">◷ &nbsp;4.30 PM To 10.00 PM.</div>
+        </div>
+        <div class="address">
+          <div class="address-title">NIDUR ADDRESS:</div>
+          Nidur Sivan Koil Bus Stop Opposite,<br/>Near IOB Bank,<br/>Behind - Lulu Super Market
+          <div class="hours">◷ &nbsp;10.00 AM To 3.00 PM.</div>
+        </div>
+      </section>
+
+        <section class="patient" aria-label="Patient details">
+          <div class="patient-line">
+            <div class="patient-field"><label for="patientName">Name:</label><span class="fill"><input class="patient-input" id="patientName" type="text" autocomplete="off" aria-label="Patient name"/></span></div>
+            <div class="patient-field"><label for="opNumber">OP No.:</label><span class="fill op"><input class="patient-input" id="opNumber" type="text" autocomplete="off" aria-label="OP number"/></span></div>
+          </div>
+          <div class="patient-line">
+            <div class="patient-field age-sex-field"><label for="patientAge">Age:</label><span class="fill"><input class="patient-input" id="patientAge" type="text" inputmode="numeric" autocomplete="off" aria-label="Patient age"/></span><label for="patientSex">Sex:</label><span class="fill"><input class="patient-input" id="patientSex" type="text" autocomplete="off" aria-label="Patient sex"/></span></div>
+            <div class="patient-field"><label for="prescriptionDate">Date:</label><span class="fill date"><input class="patient-input" id="prescriptionDate" type="text" aria-label="Prescription date" readonly/></span></div>
+          </div>
+        </section>
+
+      <section class="rxbox" aria-label="Medical prescription">
+        <div class="rx-title"><span class="rx-mark">℞</span><span class="rx-caption">MEDICAL PRESCRIPTION</span><button class="add-row no-print" id="addMedicine" type="button">+ Add medicine</button></div>
+        <table>
+          <thead><tr><th>Drug Name</th><th>Quantity</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead>
+          <tbody id="medicineRows"><tr><td class="empty-table" colspan="5">No medicines added. Select “+ Add medicine” to begin.</td></tr></tbody>
+        </table>
+      </section>
+
+      <section class="diagnosis" aria-label="Diagnosis and treatment plan">
+        <label class="write-line" for="diagnosisInput"><span>Diagnosis</span><input class="patient-input diagnosis-input" id="diagnosisInput" type="text" autocomplete="off"/></label>
+        <div class="write-line plan-line"><label for="treatmentPlanInput">Treatment Plan</label><input class="plan-input" id="treatmentPlanInput" type="text" autocomplete="off"/></div>
+      </section>
+
+      <div class="signature"><div class="signature-box">Authorized Signatory</div></div>
+      <div class="footer-art" aria-hidden="true"><span class="heart">♥</span><span class="footer-note">SAI DENTAL CLINIC · YOUR SMILE, OUR MISSION</span></div>
+    </div>
+  </main>
+  <div id="printPages" aria-hidden="true"></div>
+  <script>
+    const medicines=[
+      ["Amoxicillin Clavulanate 375 mg","375mg"],["Amoxicillin Clavulanate 625 mg","625mg"],
+      ["Tab. Rabeprazole DSR","—"],["Tab. Pantoprazole DSR","—"],["Tab. PAN 40","40mg"],
+      ["Tab. Ketorol DT","—"],["Tab. Ketorolac Tromethamine","—"],["Tab. Ofloxacin Ornidazole","—"],
+      ["Tab. Zerodol MR","—"],["Tab. Metronidazole 600 ER","600mg"],
+      ["Tab. Chymotrypsin (Chymorol Forte)","—"],["Tab. Zimol MX","—"],
+      ["Tab. Amoxicillin D.T 250 mg","250mg"],["Tab. Zinerve","—"],["Tab. Nurobeon Forte","—"],
+      ["Tab. Bcomplex","—"],["Tab. Cefixime 200","200mg"],["Tab. Dexamethasone","—"],
+      ["Tab. Aveel","—"],["Inj. Diclofenac 3ml","—"],["Inj. Diclofenac 1ml","—"],
+      ["Inj. Dexamethasone","—"],["Inj. Cefotaxime","—"],["Inj. Aveel","—"],
+      ["Syp. Ibujesic","—"],["Syp. Novamax","—"],["Syp. Ranitine","—"],
+      ["Syp. Ofloxacin & Metronidazole","—"],["Syp. Amoxyclav Dry Syrup","—"],
+      ["Mouthwash. Povidone Iodine","—"],["Mouthwash. Chlorhexidine Gluconate","—"],
+      ["Pedoflor Kids Toothpaste","—"],["Kidodent Toothpaste","—"],["Kidodent Toothbrush","—"],
+      ["Oit. Metrogyl D.G. La","—"],["Oit. Metrogyl forte","—"],["Oit. Turbocort","—"],
+      ["Tab. Doxycycline","—"],["Tab. Dolo 650","650mg"],["Tab. Paracetamol","—"],
+      ["Omnident. Tooth paste","—"],["Sensodyne tooth paste","—"],
+      ["Shy Nm for sensitivity paste","—"],["Vantej tooth paste","—"]
+    ];
+    const quantities=Array.from({length:30},(_,i)=>String(i+1));
+    const dosages=["0.1%","0.5mg","5mg","10mg","40mg","50mg","100mg","200mg","250mg","375mg","400mg","500mg","600mg","650mg","1ml","2ml","4ml","100ml","200ml","—"];
+    const frequencies=["1-0-0","0-1-0","0-0-1","1-0-1","1-1-0","0-1-1","1-1-1","2-0-2","1-1-1 (after food)","SOS"];
+    const durations=Array.from({length:30},(_,index)=>`${index+1} ${index===0?"day":"days"}`);
+    const diagnoses=["Dental caries","Tooth pain","Tooth sensitivity","Reversible pulpitis","Irreversible pulpitis","Pulp necrosis","Periapical infection","Dental abscess","Gingivitis","Periodontitis","Fractured tooth","Impacted tooth","Missing tooth","Post-extraction review"];
+    const treatmentPlans=["Root canal treatment","Dental restoration","Tooth extraction","Scaling and polishing","Crown placement","Dental implant consultation","Prosthetic replacement consultation","Medication as prescribed","Oral hygiene instructions","Review as advised"];
+    const rows=document.getElementById("medicineRows");
+    if(window.parent!==window){
+      document.getElementById("standaloneNote").textContent="New prescription";
+      document.getElementById("standaloneSave").style.display="none";
+      document.getElementById("standalonePrint").style.display="none";
+      document.body.style.paddingBottom="0";
+    }
+    document.getElementById("prescriptionDate").value=new Intl.DateTimeFormat("en-GB",{
+      day:"2-digit",month:"2-digit",year:"numeric"
+    }).format(new Date());
+
+    function closePopup(control){
+      const popup=control.querySelector("[role=listbox]");
+      const trigger=control.querySelector("[aria-expanded]");
+      if(!popup||!trigger)return;
+      popup.hidden=true;
+      trigger.setAttribute("aria-expanded","false");
+    }
+    function openPopup(control){
+      const popup=control.querySelector("[role=listbox]");
+      const trigger=control.querySelector("[aria-expanded]");
+      if(!popup||!trigger)return;
+      popup.hidden=false;
+      trigger.setAttribute("aria-expanded","true");
+    }
+    function moveOptionFocus(popup,currentIndex,direction){
+      const options=[...popup.querySelectorAll("[role=option]")];
+      if(!options.length)return;
+      const nextIndex=currentIndex<0?(direction>0?0:options.length-1):(currentIndex+direction+options.length)%options.length;
+      options[nextIndex].focus();
+    }
+    function createOptionsPopup(control,options,className,onChoose){
+      const popup=document.createElement("div");
+      popup.className=className;
+      popup.setAttribute("role","listbox");
+      popup.hidden=true;
+      function renderOptions(filter=""){
+        const query=filter.trim().toLocaleLowerCase();
+        const matches=options.filter(item=>item.toLocaleLowerCase().includes(query));
+        popup.replaceChildren();
+        matches.forEach(value=>{
+          const option=document.createElement("button");
+          option.type="button";
+          option.className=className==="choice-options"?"choice-option":"suggestion-option";
+          option.setAttribute("role","option");
+          option.textContent=value;
+          option.addEventListener("mousedown",event=>event.preventDefault());
+          option.addEventListener("click",()=>{
+            onChoose(value);
+            closePopup(control);
+            control.querySelector(".rx-choice")?.focus();
+          });
+          option.addEventListener("keydown",event=>{
+            if(event.key==="ArrowDown"||event.key==="ArrowUp"){
+              event.preventDefault();
+              moveOptionFocus(popup,matches.indexOf(value),event.key==="ArrowDown"?1:-1);
+            }else if(event.key==="Escape"){
+              event.preventDefault();
+              closePopup(control);
+              control.querySelector("[aria-expanded]")?.focus();
+            }
+          });
+          popup.appendChild(option);
+        });
+        return matches.length;
+      }
+      control.appendChild(popup);
+      control.addEventListener("focusout",event=>{
+        if(!control.contains(event.relatedTarget))closePopup(control);
+      });
+      return {popup,renderOptions};
+    }
+    function createSuggestionInput(input,options,onChoose){
+      const control=document.createElement("span");
+      control.className="suggestion-control";
+      input.parentNode.insertBefore(control,input);
+      control.appendChild(input);
+      input.setAttribute("role","combobox");
+      input.setAttribute("aria-autocomplete","list");
+      input.setAttribute("aria-expanded","false");
+      const id=`suggestions-${Math.random().toString(36).slice(2)}`;
+      input.setAttribute("aria-controls",id);
+      const {popup,renderOptions}=createOptionsPopup(control,options,"suggestion-options",value=>{
+        input.value=value;
+        input.dispatchEvent(new Event("change",{bubbles:true}));
+        if(onChoose)onChoose(value);
+      });
+      popup.id=id;
+      input.addEventListener("focus",()=>{
+        renderOptions(input.value);
+        openPopup(control);
+      });
+      input.addEventListener("input",()=>{
+        renderOptions(input.value);
+        openPopup(control);
+      });
+      input.addEventListener("keydown",event=>{
+        if(event.key==="ArrowDown"&&!popup.hidden){
+          event.preventDefault();
+          moveOptionFocus(popup,-1,1);
+        }else if(event.key==="Escape"&&!popup.hidden){
+          event.preventDefault();
+          closePopup(control);
+        }
+      });
+      return control;
+    }
+    function createSelect(label,options){
+      const select=document.createElement("select");
+      select.className="rx-select";
+      select.setAttribute("aria-label",label);
+      const placeholder=document.createElement("option");
+      placeholder.value="";
+      placeholder.textContent="Select";
+      select.appendChild(placeholder);
+      options.forEach(value=>{
+        const option=document.createElement("option");
+        option.value=value;
+        option.textContent=value;
+        select.appendChild(option);
+      });
+      return select;
+    }
+
+    function addMedicineRow(){
+      const row=document.createElement("tr");
+      const drugCell=document.createElement("td");
+      const drugInput=document.createElement("input");
+      drugInput.type="text";
+      drugInput.className="rx-select medicine-name";
+      drugInput.setAttribute("aria-label","Drug name (choose from list or type)");
+      drugInput.autocomplete="off";
+      drugCell.appendChild(drugInput);
+      const dosageSelect=createSelect("Dosage",dosages);
+      const quantitySelect=createSelect("Quantity",quantities);
+      const frequencySelect=createSelect("Frequency",frequencies);
+      const durationSelect=createSelect("Duration",durations);
+      const remove=document.createElement("button");
+      remove.type="button";
+      remove.className="remove-row no-print";
+      remove.textContent="Remove";
+      remove.setAttribute("aria-label","Remove medicine");
+      remove.addEventListener("click",()=>{
+        row.remove();
+        if(!rows.querySelector("tr")){
+          const emptyRow=document.createElement("tr");
+          const emptyCell=document.createElement("td");
+          emptyCell.className="empty-table";
+          emptyCell.colSpan=5;
+          emptyCell.textContent="No medicines added. Select “+ Add medicine” to begin.";
+          emptyRow.appendChild(emptyCell);
+          rows.appendChild(emptyRow);
+        }
+      });
+      drugInput.addEventListener("change",()=>{
+        const selected=medicines.find(medicine=>medicine[0]===drugInput.value.trim());
+        dosageSelect.value=selected&&dosages.includes(selected[1])?selected[1]:"";
+      });
+      createSuggestionInput(drugInput,medicines.map(([name])=>name));
+      drugCell.append(drugInput.parentElement,remove);
+      row.append(drugCell);
+      [quantitySelect,dosageSelect,frequencySelect,durationSelect].forEach(select=>{
+        const cell=document.createElement("td");
+        cell.appendChild(select);
+        row.appendChild(cell);
+      });
+      if(rows.querySelector(".empty-table"))rows.replaceChildren();
+      rows.appendChild(row);
+    }
+    createSuggestionInput(document.getElementById("diagnosisInput"),diagnoses);
+    createSuggestionInput(document.getElementById("treatmentPlanInput"),treatmentPlans);
+    document.addEventListener("pointerdown",event=>{
+      document.querySelectorAll(".suggestion-control").forEach(control=>{
+        if(!control.contains(event.target))closePopup(control);
+      });
+    });
+    document.getElementById("addMedicine").addEventListener("click",addMedicineRow);
+    function getPrescriptionData(){
+      return {
+        patientName:document.getElementById("patientName").value.trim(),
+        opNumber:document.getElementById("opNumber").value.trim(),
+        patientAge:document.getElementById("patientAge").value.trim(),
+        patientSex:document.getElementById("patientSex").value.trim(),
+        date:document.getElementById("prescriptionDate").value,
+        diagnosis:document.getElementById("diagnosisInput").value.trim(),
+        treatmentPlan:document.getElementById("treatmentPlanInput").value.trim(),
+        medicines:[...rows.querySelectorAll("tr")].map(row=>{
+          const drugInput=row.querySelector(".medicine-name");
+          const selects=row.querySelectorAll("select");
+          if(!drugInput||selects.length!==4)return null;
+          return {
+            name:drugInput.value.trim(),
+            qty:selects[0].value,
+            dosage:selects[1].value,
+            freq:selects[2].value,
+            dur:selects[3].value
+          };
+        }).filter(medicine=>medicine&&medicine.name)
+      };
+    }
+    const printPages=document.getElementById("printPages");
+    function cloneWithFormValues(source){
+      const clone=source.cloneNode(true);
+      const sourceFields=source.querySelectorAll("input,textarea,select");
+      const cloneFields=clone.querySelectorAll("input,textarea,select");
+      sourceFields.forEach((field,index)=>{cloneFields[index].value=field.value;});
+      return clone;
+    }
+    function preparePrescriptionPrint(){
+      printPages.replaceChildren();
+      const medicineRows=[...rows.querySelectorAll("tr")].filter(row=>row.querySelector(".medicine-name"));
+      if(medicineRows.length<=6){
+        document.body.classList.remove("print-pagination");
+        return;
+      }
+      for(let start=0;start<medicineRows.length;start+=5){
+        const page=cloneWithFormValues(document.querySelector(".paper"));
+        page.classList.add("print-page");
+        const pageRows=page.querySelector("#medicineRows");
+        pageRows.replaceChildren(...medicineRows.slice(start,start+5).map(cloneWithFormValues));
+        printPages.appendChild(page);
+      }
+      document.body.classList.add("print-pagination");
+    }
+    function clearPrescriptionPrint(){
+      printPages.replaceChildren();
+      document.body.classList.remove("print-pagination");
+    }
+    function printPrescription(){
+      preparePrescriptionPrint();
+      window.print();
+    }
+    window.addEventListener("beforeprint",preparePrescriptionPrint);
+    window.addEventListener("afterprint",clearPrescriptionPrint);
+    function resetPrescriptionForm(){
+      ["patientName","opNumber","patientAge","patientSex","diagnosisInput","treatmentPlanInput"].forEach(id=>{
+        document.getElementById(id).value="";
+      });
+      document.getElementById("prescriptionDate").value=new Intl.DateTimeFormat("en-GB",{
+        day:"2-digit",month:"2-digit",year:"numeric"
+      }).format(new Date());
+      const emptyRow=document.createElement("tr");
+      const emptyCell=document.createElement("td");
+      emptyCell.className="empty-table";
+      emptyCell.colSpan=5;
+      emptyCell.textContent="No medicines added. Select “+ Add medicine” to begin.";
+      emptyRow.appendChild(emptyCell);
+      rows.replaceChildren(emptyRow);
+    }
+    function setPrescriptionData(data){
+      resetPrescriptionForm();
+      document.getElementById("patientName").value=data.patientName||"";
+      document.getElementById("opNumber").value=data.opNumber||"";
+      document.getElementById("patientAge").value=data.patientAge||"";
+      document.getElementById("patientSex").value=data.patientSex||"";
+      document.getElementById("diagnosisInput").value=data.diagnosis||"";
+      document.getElementById("treatmentPlanInput").value=data.treatmentPlan||"";
+      document.getElementById("prescriptionDate").value=data.date||document.getElementById("prescriptionDate").value;
+      (data.medicines||[]).forEach(medicine=>{
+        addMedicineRow();
+        const row=rows.lastElementChild;
+        row.querySelector(".medicine-name").value=medicine.name||"";
+        const fields=row.querySelectorAll("select");
+        fields[0].value=medicine.qty==null?"":String(medicine.qty);
+        fields[1].value=medicine.dosage||"";
+        fields[2].value=medicine.freq||"";
+        fields[3].value=medicine.dur||"";
+      });
+    }
+    function saveStandalonePrescription(){
+      if(!getPrescriptionData().patientName){
+        alert("Enter the patient name before saving.");
+        return;
+      }
+      alert("Open this prescription from the clinic website to save it to prescription history.");
+    }
+  </script>
+</body>
+</html>
