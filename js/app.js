@@ -261,7 +261,7 @@ function exportPrescriptionsExcel() {
   const rows = prescriptions.map(rx => {
     const token = tokenById[rx.tokenId];
     const medicines = (rx.medicines||[]).filter(m=>m.name).map(m =>
-      [m.name, m.dosage, m.freq, m.dur].filter(Boolean).join(' - ')
+      [m.name, m.food||m.dosage, m.freq, m.dur].filter(Boolean).join(' - ')
     ).join('; ');
     return {
       'Date': rx.date||prescriptionDateKey(rx),
@@ -641,7 +641,7 @@ function showUndoToast(msg,onUndo){
 function addRow(d){
   const m=MEDS.find(x=>x.name===d.name)||{dosage:'',rate:0};
   rid++;
-  rows.push({id:rid,name:d.name||'',dosage:d.preserveEmptyFields?(d.dosage||''):(d.dosage||m.dosage||''),
+  rows.push({id:rid,name:d.name||'',dosage:d.preserveEmptyFields?(d.dosage||''):(d.dosage||m.dosage||''),food:d.food||'',
     freq:d.freq||'',dur:d.dur||'',
     qty:d.preserveEmptyFields&&d.qty===''?'':d.qty!=null?+d.qty:1,
     rate:d.rate!=null?+d.rate:(m.rate||0),
@@ -1142,7 +1142,7 @@ function setDoctorPrescriptionMode(mode){
       frame.addEventListener('load',resizeDoctorPrescriptionFrame);
       frame.dataset.resizeBound='1';
     }
-    if(!frame.src.includes('v=20261022ba'))frame.src='./prescription-mockup.html?v=20261022ba';
+    if(!frame.src.includes('v=20261025a'))frame.src='./prescription-mockup.html?v=20261025a';
     else resizeDoctorPrescriptionFrame();
   }
   if(newToolbar)newToolbar.style.display=showNew?'flex':'none';
@@ -1169,14 +1169,14 @@ async function saveNewDoctorRx(){
   const getData=frame?.contentWindow?.getPrescriptionData;
   if(typeof getData!=='function'){
     showToast('Prescription form is still loading. Please try again.','err');
-    return;
+    return false;
   }
   let data;
   try{
     data=getData();
   }catch(e){
     showToast('Unable to read prescription form: '+e.message,'err');
-    return;
+    return false;
   }
   newRxForm();
   _editingRxId=_newRxModelEditingId;
@@ -1192,7 +1192,8 @@ async function saveNewDoctorRx(){
     addRow({
       name:medicine.name,
       qty:medicine.qty===''?'':Number(medicine.qty),
-      dosage:medicine.dosage,
+      dosage:'',
+      food:medicine.food,
       freq:medicine.freq,
       dur:medicine.dur,
       preserveEmptyFields:true,
@@ -1211,6 +1212,7 @@ async function saveNewDoctorRx(){
   if(saved){
     _newRxModelEditingId=_editingRxId;
   }
+  return saved;
 }
 function loadNewDoctorRx(rx){
   const frame=qs('doctorRxFrame');
@@ -1245,7 +1247,9 @@ function showNewDoctorRx(){
 function showOldDoctorRx(){
   setDoctorPrescriptionMode('old');
 }
-function printDoctorPrescription(){
+async function printDoctorPrescription(){
+  const saved=await saveNewDoctorRx();
+  if(!saved)return;
   const print=qs('doctorRxFrame')?.contentWindow?.printPrescription;
   if(typeof print!=='function'){
     showToast('Prescription form is still loading. Please try again.','err');
