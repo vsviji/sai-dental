@@ -106,38 +106,42 @@
   @media screen and (max-width:700px){
     body{padding:10px}
     .paper{padding:24px 16px 0}
-    .header{grid-template-columns:70px 1fr;gap:10px}
+    .header{grid-template-columns:70px minmax(0,1fr);gap:10px}
     .logo{width:66px;height:66px}
-    .brand{font-size:clamp(19px,5vw,21px);letter-spacing:0;gap:.2em}
+    .brand{font-size:clamp(19px,5vw,21px);letter-spacing:0;gap:.2em;white-space:normal}
+    .header>div:nth-child(2),.rxbox{min-width:0}
     .contacts{grid-column:1/-1;grid-template-columns:1fr 1fr;font-size:11px}
     .addresses{grid-template-columns:1fr}
     .address+.address{border-left:0;border-top:1px solid #d7dff2;margin-top:9px;padding-top:12px}
     .patient{margin-left:0;margin-right:0;font-size:12px}
     .short,.op,.age,.date{max-width:none}
     th,td{padding:6px 4px;font-size:10px}
+    th,td{overflow-wrap:anywhere}
     th{font-size:9px}
     td{height:58px}
-    .rx-select{font-size:9px;padding:4px 2px}
+    .rx-select{min-width:0;max-width:100%;font-size:9px;padding:4px 2px}
     .add-row{font-size:10px;padding:5px}
     .footer-art{margin-left:-16px;margin-right:-16px}
   }
   @media print{
     @page{size:A4 portrait;margin:0}
     html,body,.paper,.content,.header,.addresses,.rxbox,table,.diagnosis,.signature,.footer-art{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    body{padding:0;background:#fff}
+    html,body{width:210mm;height:297mm;margin:0;padding:0;background:#fff}
     .toolbar{display:none}
-    .paper{width:210mm;height:297mm;aspect-ratio:auto;max-width:none;min-height:0;margin:0;border:0;box-shadow:none;padding:9mm 10mm 0;overflow:hidden;break-after:page}
-    .content{height:100%;display:flex;flex-direction:column}
-    .header{grid-template-columns:32mm minmax(0,1fr) 50mm}
+    .paper{position:relative;top:0;left:0;width:210mm;height:297mm;aspect-ratio:auto;max-width:none;min-height:297mm;margin:0;border:0;box-shadow:none;padding:9mm 10mm 0;overflow:hidden;break-after:page;box-sizing:border-box}
+    .content{height:100%;min-height:0;display:flex;flex-direction:column}
+    .header{grid-template-columns:32mm minmax(0,1fr) 50mm;flex:0 0 auto;break-inside:avoid}
     .brand{font-size:22px;gap:.25em}
     .contacts{font-size:10px}
     .contact-line>span:last-child{overflow-wrap:anywhere;word-break:break-word}
+    .addresses,.patient,.rxbox,.diagnosis,.signature,.footer-art{flex-shrink:0;break-inside:avoid}
     .paper:before,.paper:after,.footer-art,.footer-art:before,.heart,.footer-note{print-color-adjust:exact;-webkit-print-color-adjust:exact}
     .no-print{display:none!important}
     .rx-select{appearance:none;-webkit-appearance:none;border:0;border-radius:0;padding:0;background:transparent;color:#202a3a}
     td{height:43px;padding:4px 5px}
     .rx-select{min-height:24px}
     .suggestion-options{display:none!important}
+    .print-empty-row,.empty-table{display:none!important}
     th{background:#f1f4ff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .patient-input{height:auto;border:0!important;border-radius:0;padding:0;background:transparent;outline:0;color:#143bc4;-webkit-appearance:none;appearance:none}
     .patient-input::placeholder{color:transparent}
@@ -145,7 +149,7 @@
     .plan-input,.diagnosis-input{height:34px;min-height:34px;resize:none;border:0!important;border-radius:0;padding:0 3px;background:transparent;outline:0;color:#17243c;overflow:hidden}
     .plan-input:focus,.diagnosis-input:focus{outline:0}
     .signature{margin-top:auto}
-    .footer-art{margin:0 -10mm;height:24mm}
+    .footer-art{margin:0 -10mm;height:20mm}
     body.print-pagination>main.paper{display:none!important}
     body.print-pagination #printPages{display:block!important}
     #printPages .paper{break-after:page;page-break-after:always}
@@ -201,7 +205,7 @@
       <section class="rxbox" aria-label="Medical prescription">
         <div class="rx-title"><span class="rx-mark">℞</span><span class="rx-caption">MEDICAL PRESCRIPTION</span><button class="add-row no-print" id="addMedicine" type="button">+ Add medicine</button></div>
         <table>
-          <thead><tr><th>Drug Name</th><th>Quantity</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr></thead>
+          <thead><tr><th>Drug Name</th><th>Quantity</th><th>Timing</th><th>Frequency</th><th>Duration</th></tr></thead>
           <tbody id="medicineRows"><tr><td class="empty-table" colspan="5">No medicines added. Select “+ Add medicine” to begin.</td></tr></tbody>
         </table>
       </section>
@@ -237,7 +241,7 @@
       ["Shy Nm for sensitivity paste","—"],["Vantej tooth paste","—"]
     ];
     const quantities=Array.from({length:30},(_,i)=>String(i+1));
-    const dosages=["0.1%","0.5mg","5mg","10mg","40mg","50mg","100mg","200mg","250mg","375mg","400mg","500mg","600mg","650mg","1ml","2ml","4ml","100ml","200ml","—"];
+    const foodTimings=["Before food","After food"];
     const frequencies=["1-0-0","0-1-0","0-0-1","1-0-1","1-1-0","0-1-1","1-1-1","2-0-2","1-1-1 (after food)","SOS"];
     const durations=Array.from({length:30},(_,index)=>`${index+1} ${index===0?"day":"days"}`);
     const diagnoses=["Dental caries","Tooth pain","Tooth sensitivity","Reversible pulpitis","Irreversible pulpitis","Pulp necrosis","Periapical infection","Dental abscess","Gingivitis","Periodontitis","Fractured tooth","Impacted tooth","Missing tooth","Post-extraction review"];
@@ -375,7 +379,6 @@
       drugInput.setAttribute("aria-label","Drug name (choose from list or type)");
       drugInput.autocomplete="off";
       drugCell.appendChild(drugInput);
-      const dosageSelect=createSelect("Dosage",dosages);
       const quantitySelect=createSelect("Quantity",quantities);
       const frequencySelect=createSelect("Frequency",frequencies);
       const durationSelect=createSelect("Duration",durations);
@@ -396,14 +399,11 @@
           rows.appendChild(emptyRow);
         }
       });
-      drugInput.addEventListener("change",()=>{
-        const selected=medicines.find(medicine=>medicine[0]===drugInput.value.trim());
-        dosageSelect.value=selected&&dosages.includes(selected[1])?selected[1]:"";
-      });
       createSuggestionInput(drugInput,medicines.map(([name])=>name));
       drugCell.append(drugInput.parentElement,remove);
       row.append(drugCell);
-      [quantitySelect,dosageSelect,frequencySelect,durationSelect].forEach(select=>{
+      const foodSelect=createSelect("Before or after food",foodTimings);
+      [quantitySelect,foodSelect,frequencySelect,durationSelect].forEach(select=>{
         const cell=document.createElement("td");
         cell.appendChild(select);
         row.appendChild(cell);
@@ -435,7 +435,7 @@
           return {
             name:drugInput.value.trim(),
             qty:selects[0].value,
-            dosage:selects[1].value,
+            food:selects[1].value,
             freq:selects[2].value,
             dur:selects[3].value
           };
@@ -452,8 +452,14 @@
     }
     function preparePrescriptionPrint(){
       printPages.replaceChildren();
-      const medicineRows=[...rows.querySelectorAll("tr")].filter(row=>row.querySelector(".medicine-name"));
-      if(medicineRows.length<=6){
+      const medicineRows=[...rows.querySelectorAll("tr")].filter(row=>{
+        const input=row.querySelector(".medicine-name");
+        return input&&input.value.trim();
+      });
+      [...rows.querySelectorAll("tr")].forEach(row=>{
+        if(!medicineRows.includes(row))row.classList.add("print-empty-row");
+      });
+      if(medicineRows.length<=5){
         document.body.classList.remove("print-pagination");
         return;
       }
@@ -467,6 +473,7 @@
       document.body.classList.add("print-pagination");
     }
     function clearPrescriptionPrint(){
+      rows.querySelectorAll(".print-empty-row").forEach(row=>row.classList.remove("print-empty-row"));
       printPages.replaceChildren();
       document.body.classList.remove("print-pagination");
     }
@@ -506,16 +513,12 @@
         row.querySelector(".medicine-name").value=medicine.name||"";
         const fields=row.querySelectorAll("select");
         fields[0].value=medicine.qty==null?"":String(medicine.qty);
-        fields[1].value=medicine.dosage||"";
+        fields[1].value=medicine.food||(["Before food","After food"].includes(medicine.dosage)?medicine.dosage:"");
         fields[2].value=medicine.freq||"";
         fields[3].value=medicine.dur||"";
       });
     }
     function saveStandalonePrescription(){
-      if(!getPrescriptionData().patientName){
-        alert("Enter the patient name before saving.");
-        return;
-      }
       alert("Open this prescription from the clinic website to save it to prescription history.");
     }
   </script>
