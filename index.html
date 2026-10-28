@@ -223,6 +223,7 @@
     <div id="doctorNewRxPanel" style="display:none">
       <div id="newRxDoctorToolbar" class="no-print" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:10px">
         <button class="btn-clr" id="showOldPrescriptionBtn" type="button" onclick="showOldDoctorRx()">Old Prescription</button>
+        <span id="staffRxReadonlyNotice" style="display:none;margin-right:auto;font-size:12px;color:var(--muted)">View only — staff cannot save prescriptions</span>
         <button class="btn-save" type="button" onclick="saveNewDoctorRx()">💾 Save Prescription</button>
         <button class="btn-print" type="button" onclick="printDoctorPrescription()">🖨️ Print Prescription</button>
       </div>
@@ -1156,6 +1157,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- App Script (classic script — loads after Firebase module) -->
-<script src="./js/app.js?v=20261025a" defer></script>
+<script src="./js/app.js?v=20261028h" defer></script>
 </body>
 </html>

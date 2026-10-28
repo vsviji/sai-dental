@@ -63,12 +63,28 @@ const SETT_COL = () => window._fb.collection(window._db,'settings');
 const FUP_COL  = () => window._fupCol();
 const PAT_COL  = () => window._patCol();
 const TOKEN_COL = () => window._tokenCol();
+let _rxUnsubscribe=null;
 
 async function getAllRx(){
   const snap = await window._fb.getDocs(
     window._fb.query(RX_COL(), window._fb.orderBy('dateISO','desc'))
   );
   return snap.docs.map(d=>({...d.data(), id:d.id}));
+}
+function startRxListener(){
+  if(_rxUnsubscribe)_rxUnsubscribe();
+  const rxQuery=window._fb.query(RX_COL(),window._fb.orderBy('dateISO','desc'));
+  _rxUnsubscribe=window._fb.onSnapshot(rxQuery,snapshot=>{
+    _histCache=snapshot.docs.map(doc=>({...doc.data(),id:doc.id}));
+    filterHist();
+    updateStats();
+    if(qs('patientProfileSection')?.style.display!=='none'&&_activePatientMobile){
+      renderPatientProfile(_activePatientMobile);
+    }
+  },error=>{
+    console.error('Prescription sync error:',error);
+    showToast('Prescription sync failed: '+error.message,'err');
+  });
 }
 async function putRx(rx){
   const ref = window._fb.doc(RX_COL(), rx.id);
@@ -781,8 +797,11 @@ async function saveRx(){
   const btn=qs('btnSave');
   btn.disabled=true;btn.classList.add('saving');
   try{
-    const treatmentFee=Math.max(0,Number(qs('treatmentFee')?.value)||0);
-    const grand=rows.reduce((a,r)=>a+(r.qty*r.rate),0)+treatmentFee;
+    const treatmentFee=Math.max(0,Number(_savingNewRxModel?_pendingNewRxModelData.treatmentFee:qs('treatmentFee')?.value)||0);
+    const medicineFee=_savingNewRxModel
+      ?Math.max(0,Number(_pendingNewRxModelData.medicineFee)||0)
+      :rows.reduce((a,r)=>a+(r.qty*r.rate),0);
+    const grand=(_savingNewRxModel?medicineFee:rows.reduce((a,r)=>a+(r.qty*r.rate),0))+treatmentFee;
     const followupText=_savingNewRxModel?'':(qs('followup').value||'');
     let rxno,id,existing;
     if(_editingRxId){
@@ -795,6 +814,7 @@ async function saveRx(){
       id='rx_'+Date.now();
     }
     const rxdata = _histCache.find(r => r.id === id) || existing || {};
+    const wasPaid=rxdata.paymentStatus==='paid'||(Number(rxdata.grand)>0&&Number(rxdata.paid)>=Number(rxdata.grand));
     const rx={
       id,rxno,
       date:new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
@@ -806,7 +826,7 @@ async function saveRx(){
       patientName:   _savingNewRxModel?_pendingNewRxModelData.patientName:qs('pName').value,
       patientAge:    _savingNewRxModel?_pendingNewRxModelData.patientAge:qs('pAge').value,
       patientGender: _savingNewRxModel?_pendingNewRxModelData.patientSex:qs('pGender').value,
-      patientContact:_savingNewRxModel?(_pendingNewRxModelData.patientPhone||rxdata.patientContact||''):qs('pContact').value,
+      patientContact:_savingNewRxModel?_pendingNewRxModelData.patientPhone:qs('pContact').value,
        patientBP:     qs('pBP').value,
        patientDx:     _savingNewRxModel?_pendingNewRxModelData.diagnosis:qs('pDx').value,
        patientAllergy:qs('pAllergy').value,
@@ -815,15 +835,16 @@ async function saveRx(){
         patientMedicationHistory:qs('pMedicationHistory').value,
        tokenId:       _activeTokenId || rxdata.tokenId || '',
        treatmentFee,
+       ...(_savingNewRxModel?{medicineFee}:{}),
+       paid:_savingNewRxModel?(wasPaid?grand:(Number(_pendingNewRxModelData.paid)||0)):(rxdata.paid||0),
+       paymentStatus:_savingNewRxModel?(wasPaid?'paid':(_pendingNewRxModelData.paymentStatus||'pending')):(rxdata.paymentStatus||'pending'),
+       paymentMethod:_savingNewRxModel?(_pendingNewRxModelData.paymentMethod||''):(rxdata.paymentMethod||''),
       medicines:     rows.map(r=>({...r})),
       notes:         _savingNewRxModel?_pendingNewRxModelData.treatmentPlan:qs('notes').value,
       treatmentPlan: _savingNewRxModel?_pendingNewRxModelData.treatmentPlan:qs('notes').value,
       prescriptionModel:_savingNewRxModel?'mockup-v1':(rxdata.prescriptionModel||''),
       followup:      followupText,
-      grand:         Math.round(grand),
-      paid:          rxdata.paid||0,
-       paymentStatus: rxdata.paymentStatus||'pending',
-       paymentMethod: rxdata.paymentMethod||'',
+      grand:         _savingNewRxModel?grand:Math.round(grand),
       xrays:         rxdata.xrays||[]
     };
     try{
@@ -850,6 +871,12 @@ async function saveRx(){
     updateBillPay(rx);
     qs('btnSaveLabel').textContent='💾 Update '+rxno;
     updatePatientFromRx(rx);
+    if(_savingNewRxModel){
+      _newRxModelEditingId=rx.id;
+      const setData=qs('doctorRxFrame')?.contentWindow?.setPrescriptionData;
+      if(typeof setData==='function')setNewRxFormData(setData,rx);
+      updateStaffRxActions();
+    }
     showToast('✓ '+rxno+' '+(wasNew?'saved':'updated'));
     return true;
   }catch(e){
@@ -863,22 +890,46 @@ async function saveRx(){
 
 /* ─── HISTORY ─── */
 async function loadHist(){
-  try{_histCache=await getAllRx();}catch(e){_histCache=[];}
+  try{_histCache=await getAllRx();}catch(e){
+    console.error('Prescription history load error:',e);
+    showToast('Could not refresh prescription history: '+e.message,'err');
+  }
   filterHist();updateStats();applyRoleUI();
 }
 function filterHist(){
   const q=(qs('histSearch')?.value||'').toLowerCase();
   const dx=qs('histFilterDx')?.value||'';
   const sort=qs('histSort')?.value||'newest';
+  const dateOrder=sort==='oldest'?1:-1;
   let list=_histCache.filter(r=>{
     const mq=!q||[(r.patientName||''),(r.rxno||''),(r.patientDx||''),(r.patientContact||''),(r.patientOPNo||r.patientRef||''),(r.treatmentPlan||r.notes||'')].some(s=>s.toLowerCase().includes(q));
     return mq&&(!dx||r.patientDx===dx);
   });
-  if(sort==='newest')list.sort((a,b)=>(b.dateISO||'').localeCompare(a.dateISO||''));
-  else if(sort==='oldest')list.sort((a,b)=>(a.dateISO||'').localeCompare(b.dateISO||''));
-  else if(sort==='name')list.sort((a,b)=>(a.patientName||'').localeCompare(b.patientName||''));
-  else if(sort==='amount')list.sort((a,b)=>b.grand-a.grand);
+  list.sort((a,b)=>{
+    const dateA=historyDateKey(a)||'0000-00-00';
+    const dateB=historyDateKey(b)||'0000-00-00';
+    const byDate=dateOrder*dateA.localeCompare(dateB);
+    if(byDate)return byDate;
+    if(sort==='name')return (a.patientName||'').localeCompare(b.patientName||'');
+    if(sort==='amount')return (Number(b.grand)||0)-(Number(a.grand)||0);
+    const timeA=a.dateISO||'';
+    const timeB=b.dateISO||'';
+    return dateOrder*timeA.localeCompare(timeB);
+  });
   histPage=1;renderHistPage(list);
+}
+function historyDateKey(rx){
+  const date=rx.dateISO?new Date(rx.dateISO):(rx.date?new Date(rx.date):null);
+  if(date&&!Number.isNaN(date.getTime())){
+    return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+  }
+  return rx.date?'legacy:'+rx.date:'';
+}
+function historyDateLabel(key){
+  if(!key)return 'Date not recorded';
+  if(key.startsWith('legacy:'))return key.slice(7);
+  const date=new Date(key+'T00:00:00');
+  return Number.isNaN(date.getTime())?key:date.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 }
 function renderHistPage(list){
   const el=qs('histList'),pg=qs('pagination');
@@ -890,7 +941,20 @@ function renderHistPage(list){
     el.innerHTML='<div class="empty-state"><p>No prescriptions found.<br>Create and save your first prescription.</p></div>';
     pg.innerHTML='';return;
   }
-  el.innerHTML=slice.map(r=>`
+  const groups=[];
+  slice.forEach(r=>{
+    const key=historyDateKey(r);
+    let group=groups[groups.length-1];
+    if(!group||group.key!==key){group={key,records:[]};groups.push(group);}
+    group.records.push(r);
+  });
+  el.innerHTML=groups.map(group=>`
+    <section class="hist-date-group" aria-label="${escapeHtmlAttr(historyDateLabel(group.key))}">
+      <div class="hist-date-heading">
+        <h3>${escapeHtml(historyDateLabel(group.key))}</h3>
+        <span>${group.records.length} prescription${group.records.length===1?'':'s'}</span>
+      </div>
+      ${group.records.map(r=>`
     <div class="hist-item">
        <div onclick="${isStaff()?`loadRx('${r.id}')`:`duplicateRx('${r.id}')`}" class="hist-main">
       <div class="hi-name">${escapeHtml(r.patientName||'—')} <span class="hi-amt">₹${Number(r.grand)||0}</span>
@@ -905,14 +969,16 @@ function renderHistPage(list){
           <button class="btn-icon-hist btn-del-hist" onclick="event.stopPropagation();showDeleteConfirm('${r.id}')" title="Delete">✕</button>
         </span>`:''}
       </div>
-      <div class="hi-sub">${escapeHtml(r.date||'')} &nbsp;·&nbsp; ${escapeHtml(r.patientDx||'No diagnosis')} ${(r.patientOPNo||r.patientRef)?'· OP '+escapeHtml(r.patientOPNo||r.patientRef):''} ${r.patientContact?'· '+escapeHtml(r.patientContact):''}</div>
+      <div class="hi-sub">${escapeHtml(r.patientDx||'No diagnosis')} ${(r.patientOPNo||r.patientRef)?'· OP '+escapeHtml(r.patientOPNo||r.patientRef):''} ${r.patientContact?'· '+escapeHtml(r.patientContact):''}</div>
+      <div class="hi-sub">Treatment ₹${Number(r.treatmentFee)||0} · Medicine ₹${prescriptionMedicineFee(r)} · Total ₹${Number(r.grand)||0}${r.paymentStatus==='paid'?' · Paid'+(r.paymentMethod?' ('+escapeHtml(r.paymentMethod.toUpperCase())+')':''):' · Balance ₹'+Math.max(0,(Number(r.grand)||0)-(Number(r.paid)||0))}</div>
       <div class="hi-meds">${(r.medicines||[]).map(m=>escapeHtml(m.name||'')).filter(Boolean).slice(0,5).join(', ')}${(r.medicines||[]).length>5?'…':''}</div>
       </div>
        <div class="hist-extra-actions">
          ${!isStaff()?`<button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();duplicateRx('${r.id}')">🔁 Duplicate</button>`:''}
         ${(r.xrays||[]).length?'<span class="hi-xray" title="X-ray attached">📷</span> ':''}<button class="btn-clr" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();showPatientProfile('${r.id}')">👤 Profile</button>
       </div>
-    </div>`).join('');
+    </div>`).join('')}
+    </section>`).join('');
   if(pages<=1){pg.innerHTML='';return;}
   let h=`<button class="pg-btn" onclick="goPg(${histPage-1})" ${histPage===1?'disabled':''}>‹ Prev</button>`;
   for(let i=1;i<=pages;i++){
@@ -951,7 +1017,11 @@ function setFormReadOnly(ro){
 function loadRx(id){
   const isS=isStaff();
   const rx=_histCache.find(r=>r.id===id);if(!rx)return;
-  if(isDoctor()||isAdmin())showOldDoctorRx();
+  if(isS){
+    loadStaffPrescriptionDetails(rx);
+    return;
+  }
+  if(isDoctor()||isAdmin()||isS)showOldDoctorRx();
   qs('pName').value   =rx.patientName   ||'';
   qs('pAge').value    =rx.patientAge    ||'';
   qs('pGender').value =rx.patientGender ||'';
@@ -1139,11 +1209,18 @@ function setDoctorPrescriptionMode(mode){
   const frame=qs('doctorRxFrame');
   if(showNew&&frame){
     if(!frame.dataset.resizeBound){
-      frame.addEventListener('load',resizeDoctorPrescriptionFrame);
+      frame.addEventListener('load',()=>{
+        resizeDoctorPrescriptionFrame();
+        setNewPrescriptionReadOnly(isStaff());
+        updateStaffRxActions();
+      });
       frame.dataset.resizeBound='1';
     }
-    if(!frame.src.includes('v=20261025a'))frame.src='./prescription-mockup.html?v=20261025a';
-    else resizeDoctorPrescriptionFrame();
+    if(!frame.src.includes('v=20261028g'))frame.src='./prescription-mockup.html?v=20261028g';
+    else{
+      resizeDoctorPrescriptionFrame();
+      setNewPrescriptionReadOnly(isStaff());
+    }
   }
   if(newToolbar)newToolbar.style.display=showNew?'flex':'none';
   if(oldToolbar)oldToolbar.style.display=showNew?'none':'flex';
@@ -1156,15 +1233,66 @@ function resizeDoctorPrescriptionFrame(){
   if(!frame||!doc?.body||!paper)return;
   const resize=()=>{
     const bottomPadding=parseFloat(doc.defaultView.getComputedStyle(doc.body).paddingBottom)||0;
-    frame.style.height=Math.ceil(paper.getBoundingClientRect().bottom+doc.defaultView.scrollY+bottomPadding)+'px';
+    const feePanel=doc.querySelector('.fee-panel');
+    const bottom=Math.max(paper.getBoundingClientRect().bottom,feePanel?.getBoundingClientRect().bottom||0);
+    frame.style.height=Math.ceil(bottom+doc.defaultView.scrollY+bottomPadding)+'px';
   };
   resize();
   _doctorRxFrameResizeObserver?.disconnect();
   _doctorRxFrameResizeObserver=new ResizeObserver(resize);
   _doctorRxFrameResizeObserver.observe(doc.body);
   _doctorRxFrameResizeObserver.observe(paper);
+  const feePanel=doc.querySelector('.fee-panel');
+  if(feePanel)_doctorRxFrameResizeObserver.observe(feePanel);
+}
+function setNewPrescriptionReadOnly(readOnly){
+  const controls=qs('doctorRxFrame')?.contentDocument?.querySelectorAll('input,select,textarea,button');
+  controls?.forEach(control=>{
+    if(!readOnly){
+      control.disabled=false;
+      if(control.tagName==='INPUT'||control.tagName==='TEXTAREA'){
+        control.readOnly=control.id==='prescriptionDate';
+      }
+      return;
+    }
+    if(control.tagName==='INPUT'||control.tagName==='TEXTAREA'){
+      control.readOnly=readOnly;
+      control.disabled=false;
+    }else{
+      control.disabled=readOnly;
+    }
+  });
+  if(readOnly){
+    const rx=_histCache.find(record=>record.id===_newRxModelEditingId);
+    const frameDoc=qs('doctorRxFrame')?.contentDocument;
+    const patientName=frameDoc?.getElementById('patientName');
+    if(patientName)patientName.readOnly=false;
+    ['patientAge','patientSex'].forEach(id=>{
+      const field=frameDoc?.getElementById(id);
+      const value=id==='patientAge'?rx?.patientAge:rx?.patientGender;
+      if(field&&!String(value||'').trim())field.readOnly=false;
+    });
+    const phone=frameDoc?.getElementById('patientPhone');
+    if(phone)phone.readOnly=false;
+    const medicineFee=frameDoc?.getElementById('medicineFeeInput');
+    if(medicineFee)medicineFee.readOnly=false;
+    const treatmentFee=frameDoc?.getElementById('treatmentFeeInput');
+    if(treatmentFee){
+      treatmentFee.readOnly=false;
+      treatmentFee.disabled=true;
+    }
+    const paymentMethod=frameDoc?.getElementById('paymentMethodInput');
+    if(paymentMethod)paymentMethod.disabled=false;
+  }
+  const frameDoc=qs('doctorRxFrame')?.contentDocument;
+  const saveBillingButton=frameDoc?.getElementById('saveBillingButton');
+  if(saveBillingButton)saveBillingButton.disabled=!_newRxModelEditingId;
 }
 async function saveNewDoctorRx(){
+  if(isStaff()){
+    showToast('Staff can view the new prescription model but cannot save prescriptions','err');
+    return false;
+  }
   const frame=qs('doctorRxFrame');
   const getData=frame?.contentWindow?.getPrescriptionData;
   if(typeof getData!=='function'){
@@ -1178,12 +1306,18 @@ async function saveNewDoctorRx(){
     showToast('Unable to read prescription form: '+e.message,'err');
     return false;
   }
+  if([data.treatmentFee,data.medicineFee].some(fee=>!Number.isFinite(Number(fee))||Number(fee)<0)){
+    showToast('Enter valid treatment and medicine fees (zero or more)','err');
+    return false;
+  }
   newRxForm();
   _editingRxId=_newRxModelEditingId;
   _activeTokenId=null;
   qs('pName').value=data.patientName;
   qs('pAge').value=data.patientAge;
   qs('pGender').value=data.patientSex;
+  qs('pContact').value=data.patientPhone;
+  qs('treatmentFee').value=data.treatmentFee;
   qs('pDx').value=data.diagnosis;
   qs('notes').value=data.treatmentPlan;
   rows=[];rid=0;
@@ -1211,6 +1345,7 @@ async function saveNewDoctorRx(){
   }
   if(saved){
     _newRxModelEditingId=_editingRxId;
+    updateStaffRxActions();
   }
   return saved;
 }
@@ -1224,9 +1359,129 @@ function loadNewDoctorRx(rx){
   setNewRxFormData(setData,rx);
   _newRxModelEditingId=rx.id;
   showNewDoctorRx();
+  setNewPrescriptionReadOnly(false);
+  updateStaffRxActions();
   const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
   if(rxBtn)sw('rx',rxBtn);
   return true;
+}
+function loadStaffPrescriptionDetails(rx){
+  const setData=qs('doctorRxFrame')?.contentWindow?.setPrescriptionData;
+  if(typeof setData!=='function'){
+    showToast('Prescription form is still loading. Please try again.','err');
+    return false;
+  }
+  setData({
+    patientName:rx.patientName||'',
+    opNumber:rx.patientOPNo||rx.patientRef||'',
+    patientAge:rx.patientAge||'',
+    patientSex:rx.patientGender||'',
+    patientPhone:rx.patientContact||'',
+    treatmentFee:rx.treatmentFee||0,
+    medicineFee:prescriptionMedicineFee(rx),
+    paid:rx.paid||0,
+    paymentStatus:rx.paymentStatus||'pending',
+    paymentMethod:rx.paymentMethod||'',
+    date:rx.prescriptionDate||rx.date||'',
+    diagnosis:rx.patientDx||'',
+    treatmentPlan:rx.treatmentPlan||rx.notes||'',
+    medicines:rx.medicines||[]
+  });
+  _newRxModelEditingId=rx.id;
+  showNewDoctorRx();
+  setNewPrescriptionReadOnly(true);
+  updateStaffRxActions();
+  const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+  if(rxBtn)sw('rx',rxBtn);
+  return true;
+}
+async function savePrescriptionBilling(){
+  if(!(isStaff()||isDoctor()||isAdmin())){
+    showToast('You are not allowed to update prescription billing','err');
+    return false;
+  }
+  const rx=_histCache.find(record=>record.id===_newRxModelEditingId);
+  if(!rx){
+    showToast('Save or open a prescription before updating billing','err');
+    return false;
+  }
+  const getData=qs('doctorRxFrame')?.contentWindow?.getPrescriptionData;
+  if(typeof getData!=='function'){
+    showToast('Prescription form is still loading. Please try again.','err');
+    return false;
+  }
+  const data=getData();
+  const updates={};
+  if(isStaff()){
+    const patientName=data.patientName.trim();
+    if(!patientName){
+      showToast('Patient name cannot be empty','err');
+      return false;
+    }
+    if((rx.patientName||'')!==patientName)updates.patientName=patientName;
+    if(!String(rx.patientAge||'').trim()&&data.patientAge)updates.patientAge=data.patientAge;
+    if(!String(rx.patientGender||'').trim()&&data.patientSex)updates.patientGender=data.patientSex;
+  }else{
+    if(String(rx.patientAge||'')!==data.patientAge)updates.patientAge=data.patientAge;
+    if(String(rx.patientGender||'')!==data.patientSex)updates.patientGender=data.patientSex;
+  }
+  if(String(rx.patientContact||'')!==data.patientPhone)updates.patientContact=data.patientPhone;
+  const treatmentFee=Number(data.treatmentFee);
+  const medicineFee=Number(data.medicineFee);
+  if(!Number.isFinite(medicineFee)||medicineFee<0||(!isStaff()&&(!Number.isFinite(treatmentFee)||treatmentFee<0))){
+    showToast('Enter valid fee amounts (zero or more)','err');
+    return false;
+  }
+  const newTreatmentFee=isStaff()?Number(rx.treatmentFee)||0:treatmentFee;
+  const oldMedicineFee=prescriptionMedicineFee(rx);
+  if(oldMedicineFee!==medicineFee)updates.medicineFee=medicineFee;
+  if(!isStaff()&&Number(rx.treatmentFee||0)!==treatmentFee){
+    updates.treatmentFee=treatmentFee;
+  }
+  const grand=newTreatmentFee+medicineFee;
+  if(Number(rx.grand||0)!==grand)updates.grand=grand;
+  const paymentMethod=data.paymentMethod||'';
+  const wasPaid=rx.paymentStatus==='paid'||(Number(rx.grand)>0&&Number(rx.paid)>=Number(rx.grand));
+  if(['cash','gpay','bpay'].includes(paymentMethod)){
+    if(grand<=0){
+      showToast('Enter the treatment and/or medicine fee before recording payment','err');
+      return false;
+    }
+    updates.paid=grand;
+    updates.paymentStatus='paid';
+    updates.paymentMethod=paymentMethod;
+  }else if(wasPaid){
+    updates.paid=grand;
+    updates.paymentStatus='paid';
+    updates.paymentMethod=rx.paymentMethod||'';
+  }
+  if(Object.keys(updates).length===0){
+    showToast('Billing details are already up to date','warn');
+    return false;
+  }
+  const buttons=[qs('doctorRxFrame')?.contentDocument?.getElementById('saveBillingButton')].filter(Boolean);
+  buttons.forEach(button=>button.disabled=true);
+  try{
+    await window._fb.updateDoc(window._fb.doc(RX_COL(),rx.id),updates);
+    const index=_histCache.findIndex(record=>record.id===rx.id);
+    if(index>=0)_histCache[index]={..._histCache[index],...updates};
+    const setData=qs('doctorRxFrame')?.contentWindow?.setPrescriptionData;
+    if(typeof setData==='function')setNewRxFormData(setData,_histCache[index]||{...rx,...updates});
+    filterHist();
+    updateStats();
+    setNewPrescriptionReadOnly(isStaff());
+    showToast(updates.paymentStatus==='paid'?'Billing and payment saved':'Billing details saved');
+    return true;
+  }catch(e){
+    showToast('Billing update failed: '+e.message,'err');
+    return false;
+  }finally{
+    buttons.forEach(button=>button.disabled=false);
+    setNewPrescriptionReadOnly(isStaff());
+  }
+}
+async function saveStaffDemographics(){
+  return savePrescriptionBilling(false);
 }
 function setNewRxFormData(setData,rx){
   setData({
@@ -1235,11 +1490,20 @@ function setNewRxFormData(setData,rx){
     patientAge:rx.patientAge||'',
     patientSex:rx.patientGender||'',
     patientPhone:rx.patientContact||'',
+    treatmentFee:rx.treatmentFee||0,
+    medicineFee:prescriptionMedicineFee(rx),
+    paid:rx.paid||0,
+    paymentStatus:rx.paymentStatus||'pending',
+    paymentMethod:rx.paymentMethod||'',
     date:rx.prescriptionDate||rx.date||'',
     diagnosis:rx.patientDx||'',
     treatmentPlan:rx.treatmentPlan||rx.notes||'',
     medicines:rx.medicines||[]
   });
+}
+function prescriptionMedicineFee(rx){
+  if(rx.medicineFee!=null&&Number.isFinite(Number(rx.medicineFee)))return Math.max(0,Number(rx.medicineFee));
+  return Math.max(0,(Number(rx.grand)||0)-(Number(rx.treatmentFee)||0));
 }
 function showNewDoctorRx(){
   setDoctorPrescriptionMode('new');
@@ -1248,6 +1512,10 @@ function showOldDoctorRx(){
   setDoctorPrescriptionMode('old');
 }
 async function printDoctorPrescription(){
+  if(isStaff()){
+    showToast('Staff cannot print prescriptions from the new prescription model','err');
+    return;
+  }
   const saved=await saveNewDoctorRx();
   if(!saved)return;
   const print=qs('doctorRxFrame')?.contentWindow?.printPrescription;
@@ -1261,6 +1529,10 @@ async function printDoctorPrescription(){
 function sw(tab,btn){
   if(isDoctor()&&!['rx','hist'].includes(tab)){
     showToast('Doctors can access prescriptions and history only','err');
+    return;
+  }
+  if(isStaff()&&!['rx','hist'].includes(tab)){
+    showToast('Staff can access prescriptions and history only','err');
     return;
   }
   const tabs=['token','rx','hist','dash','apt','pat','inv','fup'];
@@ -1373,7 +1645,17 @@ async function repeatPreviousRx(){
   showToast('Previous Rx loaded: '+last.rxno);
 }
 function newRx(){
-  if(isStaff()){showToast('Staff cannot create prescriptions','err');return;}
+  if(isStaff()){
+    _newRxModelEditingId=null;
+    updateStaffRxActions();
+    showNewDoctorRx();
+    const frame=qs('doctorRxFrame');
+    if(typeof frame?.contentWindow?.resetPrescriptionForm==='function')frame.contentWindow.resetPrescriptionForm();
+    const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+    if(rxBtn)sw('rx',rxBtn);
+    showToast('New prescription model opened in view-only mode');
+    return;
+  }
   if(isDoctor()||isAdmin()){
     _newRxModelEditingId=null;
     showNewDoctorRx();
@@ -1469,21 +1751,18 @@ function applyRoleUI() {
   if (existing) existing.remove();
   document.querySelectorAll('.tabs .tab').forEach(btn => { btn.style.display = ''; });
   const oldPrescriptionBtn = qs('showOldPrescriptionBtn');
-  if (oldPrescriptionBtn) oldPrescriptionBtn.style.display = isD ? 'none' : '';
+  if (oldPrescriptionBtn) oldPrescriptionBtn.style.display = isD||isS ? 'none' : '';
+  updateStaffRxActions();
+  setNewPrescriptionReadOnly(isS);
 
   if (isS || isD) {
-    /* Staff cannot access Dashboard; doctors only get prescription and history tabs. */
     const hiddenTabs = isD
       ? ['token', 'dash', 'apt', 'pat', 'inv', 'fup']
-      : ['dash', 'inv'];
+      : ['token', 'dash', 'apt', 'pat', 'inv', 'fup'];
     hiddenTabs.forEach(t => {
       const btn = document.querySelector(`.tab[onclick*="'${t}'"]`);
       if (btn) btn.style.display = 'none';
     });
-    if(isS){
-      const newRxBtn=document.querySelector('.tab[onclick*="newRx"]');
-      if(newRxBtn)newRxBtn.style.display='none';
-    }
     /* Hide JSON backup controls for doctor and staff */
     ['exportAll', 'importJSON'].forEach(fn => {
       const btn = document.querySelector(`[onclick*="${fn}"]`);
@@ -1503,6 +1782,27 @@ function applyRoleUI() {
   }
   /* Update follow-up badge asynchronously */
   updateFupBadge();
+}
+function updateStaffRxActions(){
+  const isS=isStaff();
+  const staffNotice=qs('staffRxReadonlyNotice');
+  if(staffNotice){
+    staffNotice.textContent=_newRxModelEditingId
+      ? 'Staff can update medicine fee, payment and missing patient details'
+      : 'Open a saved prescription to enter medicine fee and payment';
+    staffNotice.style.display=isS?'inline':'none';
+  }
+  const treatmentFeeField=qs('doctorRxFrame')?.contentDocument?.getElementById('treatmentFeeField');
+  if(treatmentFeeField)treatmentFeeField.style.display='';
+  const feePanel=qs('doctorRxFrame')?.contentDocument?.querySelector('.fee-panel');
+  if(feePanel)feePanel.style.display='';
+  const saveBillingButton=qs('doctorRxFrame')?.contentDocument?.getElementById('saveBillingButton');
+  if(saveBillingButton)saveBillingButton.textContent=isS?'Save patient details & bill':'Save fees/payment';
+  if(saveBillingButton)saveBillingButton.disabled=!_newRxModelEditingId;
+  const saveNewRxBtn=qs('newRxDoctorToolbar')?.querySelector('[onclick*="saveNewDoctorRx"]');
+  const printNewRxBtn=qs('newRxDoctorToolbar')?.querySelector('[onclick*="printDoctorPrescription"]');
+  if(saveNewRxBtn)saveNewRxBtn.style.display=isS?'none':'';
+  if(printNewRxBtn)printNewRxBtn.style.display=isS?'none':'';
 }
 
 /* ─── MODAL HELPERS ─── */
@@ -3161,8 +3461,9 @@ waitFB(()=>{
 
       /* Fetch user role (normalize email to lowercase) */
       _currentRole = await getUserRole(user.email.toLowerCase());
-      setDoctorPrescriptionMode(isDoctor()||isAdmin()?'new':'old');
+      setDoctorPrescriptionMode(isDoctor()||isAdmin()||isStaff()?'new':'old');
       qs('appMain').style.display='block';
+      startRxListener();
       startTokenListener();
 
       /* Show role badge in sync bar */
@@ -3200,13 +3501,8 @@ waitFB(()=>{
       applyRoleUI(); /* refresh follow-up badge after history loads */
       updateBackBtn();
       if(isStaff())setTimeout(()=>showFupNotification(),500);
-      if(isStaff()){
-        const tokenBtn=document.querySelector(`.tab[onclick*="'token'"]`);
-        if(tokenBtn)sw('token',tokenBtn);
-      }else{
-        const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
-        if(rxBtn)sw('rx',rxBtn);
-      }
+      const rxBtn=document.querySelector(`.tab[onclick*="newRx"]`);
+      if(rxBtn)sw('rx',rxBtn);
       restoreDraft();
       populateDoctorSelect();
       updateAptBadge();
@@ -3216,6 +3512,7 @@ waitFB(()=>{
         navigator.serviceWorker.register('./sw.js').catch(()=>{});
       }
     }else{
+      if(_rxUnsubscribe){_rxUnsubscribe();_rxUnsubscribe=null;}
       if(_tokenUnsubscribe){_tokenUnsubscribe();_tokenUnsubscribe=null;}
       qs('loginOverlay').style.display='flex';
       qs('appMain').style.display='none';

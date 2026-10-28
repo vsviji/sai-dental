@@ -15,6 +15,9 @@ service cloud.firestore {
     function isStaff() {
       return hasRole('staff') || isAdmin();
     }
+    function isOnlyStaff() {
+      return hasRole('staff');
+    }
     function isDoctor() {
       return hasRole('doctor');
     }
@@ -26,7 +29,44 @@ service cloud.firestore {
     match /prescriptions/{rxId} {
       allow read: if isAuthorized();
       allow create: if (isAdmin() || isDoctor()) && request.resource.data.id == rxId;
-      allow update: if isAdmin() || isDoctor();
+      allow update: if isAdmin() || isDoctor() || (
+        isOnlyStaff()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['patientName', 'patientAge', 'patientGender', 'patientContact', 'medicineFee', 'grand', 'paid', 'paymentStatus', 'paymentMethod'])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['medicineFee', 'grand'])
+          || (
+            request.resource.data.medicineFee is number
+            && request.resource.data.medicineFee >= 0
+            && request.resource.data.grand is number
+            && request.resource.data.grand == request.resource.data.medicineFee + resource.data.get('treatmentFee', 0)
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['paid', 'paymentStatus', 'paymentMethod'])
+          || (
+            request.resource.data.paid is number
+            && request.resource.data.paid == request.resource.data.grand
+            && request.resource.data.paymentStatus == 'paid'
+            && request.resource.data.paymentMethod in ['cash', 'gpay', 'bpay']
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['patientAge'])
+          || !resource.data.keys().hasAny(['patientAge'])
+          || resource.data.patientAge == null
+          || resource.data.patientAge == ''
+          || request.resource.data.patientAge == resource.data.patientAge
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['patientGender'])
+          || !resource.data.keys().hasAny(['patientGender'])
+          || resource.data.patientGender == null
+          || resource.data.patientGender == ''
+          || request.resource.data.patientGender == resource.data.patientGender
+        )
+      );
       allow delete: if isAdmin() || isDoctor();
     }
 
