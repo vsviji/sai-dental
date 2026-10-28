@@ -1216,7 +1216,7 @@ function setDoctorPrescriptionMode(mode){
       });
       frame.dataset.resizeBound='1';
     }
-    if(!frame.src.includes('v=20261028g'))frame.src='./prescription-mockup.html?v=20261028g';
+    if(!frame.src.includes('v=20261028h'))frame.src='./prescription-mockup.html?v=20261028h';
     else{
       resizeDoctorPrescriptionFrame();
       setNewPrescriptionReadOnly(isStaff());
@@ -1267,6 +1267,8 @@ function setNewPrescriptionReadOnly(readOnly){
     const frameDoc=qs('doctorRxFrame')?.contentDocument;
     const patientName=frameDoc?.getElementById('patientName');
     if(patientName)patientName.readOnly=false;
+    const opNumber=frameDoc?.getElementById('opNumber');
+    if(opNumber)opNumber.readOnly=false;
     ['patientAge','patientSex'].forEach(id=>{
       const field=frameDoc?.getElementById(id);
       const value=id==='patientAge'?rx?.patientAge:rx?.patientGender;
@@ -1419,6 +1421,9 @@ async function savePrescriptionBilling(){
       return false;
     }
     if((rx.patientName||'')!==patientName)updates.patientName=patientName;
+    const opNumber=data.opNumber.trim();
+    if((rx.patientOPNo||'')!==opNumber)updates.patientOPNo=opNumber;
+    if((rx.patientRef||'')!==opNumber)updates.patientRef=opNumber;
     if(!String(rx.patientAge||'').trim()&&data.patientAge)updates.patientAge=data.patientAge;
     if(!String(rx.patientGender||'').trim()&&data.patientSex)updates.patientGender=data.patientSex;
   }else{

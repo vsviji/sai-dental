@@ -32,7 +32,7 @@ service cloud.firestore {
       allow update: if isAdmin() || isDoctor() || (
         isOnlyStaff()
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['patientName', 'patientAge', 'patientGender', 'patientContact', 'medicineFee', 'grand', 'paid', 'paymentStatus', 'paymentMethod'])
+          .hasOnly(['patientName', 'patientOPNo', 'patientRef', 'patientAge', 'patientGender', 'patientContact', 'medicineFee', 'grand', 'paid', 'paymentStatus', 'paymentMethod'])
         && (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['medicineFee', 'grand'])
           || (

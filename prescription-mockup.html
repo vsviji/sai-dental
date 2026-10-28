@@ -17,15 +17,15 @@
   .paper:before{content:"";position:absolute;z-index:0;top:0;left:0;right:0;height:15px;background:#83e5f0}
   .paper:after{content:"";position:absolute;z-index:0;bottom:0;left:0;right:0;height:15px;background:#172fd1}
   .content{position:relative;z-index:1}
-  .header{display:grid;grid-template-columns:132px 1fr 195px;gap:14px;align-items:center;padding:8px 0 18px;border-bottom:2px dashed #4263df}
-  .logo{width:118px;height:118px;object-fit:cover;border-radius:50%;border:2px solid #bdeff1}
+  .header{display:grid;grid-template-columns:140px minmax(0,1fr) 195px;gap:10px;align-items:center;padding:8px 0 18px;border-bottom:2px dashed #4263df}
+  .logo{width:132px;height:132px;object-fit:cover;border-radius:50%;border:2px solid #bdeff1}
   .brand{display:flex;align-items:baseline;gap:.3em;font-size:clamp(21px,1.9vw,23px);line-height:1.05;font-weight:800;letter-spacing:.2px;color:#1441d5;white-space:nowrap}
   .brand-clinic{color:#e620bd}
   .doctor{margin-top:10px;font-weight:700;color:#1644ce}
   .credentials{font-size:12px;margin-top:3px}
-  .specialty{display:flex;align-items:baseline;gap:5px;margin-top:6px;line-height:1.15;font-weight:800;white-space:nowrap;letter-spacing:-.3px}
-  .specialty-location{font-size:13px;color:#1644ce}
-  .specialty-services{font-size:12px;color:#d915ab}
+  .specialty{display:flex;align-items:baseline;gap:.22em;margin-top:6px;line-height:1.15;font-weight:800;white-space:nowrap;letter-spacing:-.3px;container-type:inline-size}
+  .specialty-location{font-size:4.4cqi;color:#1644ce}
+  .specialty-services{font-size:4.1cqi;color:#d915ab}
   .reg{font-size:12px;margin-top:5px;color:#1644ce}
   .contacts{display:grid;gap:9px;min-width:0;color:#1240c8;font-weight:700;font-size:13px}
   .contact-line{display:flex;gap:8px;align-items:center}
@@ -140,11 +140,12 @@
     .toolbar{display:none}
     .paper{position:relative;top:0;left:0;width:210mm;height:297mm;aspect-ratio:auto;max-width:none;min-height:297mm;margin:0;border:0;box-shadow:none;padding:9mm 10mm 0;overflow:hidden;break-after:page;box-sizing:border-box}
     .content{height:100%;min-height:0;display:flex;flex-direction:column}
-    .header{grid-template-columns:32mm minmax(0,1fr) 50mm;flex:0 0 auto;break-inside:avoid}
+    .header{grid-template-columns:36mm minmax(0,1fr) 50mm;gap:3mm;flex:0 0 auto;break-inside:avoid}
+    .logo{width:34mm;height:34mm}
     .brand{font-size:22px;gap:.25em}
-    .specialty{gap:4px;line-height:1.15}
-    .specialty-location{font-size:11px}
-    .specialty-services{font-size:10px}
+    .specialty{gap:1.5mm;line-height:1.15}
+    .specialty-location{font-size:16px}
+    .specialty-services{font-size:15px}
     .contacts{font-size:10px}
     .contact-line>span:last-child{overflow-wrap:anywhere;word-break:break-word}
     .addresses,.patient,.rxbox,.diagnosis,.signature,.footer-art{flex-shrink:0;break-inside:avoid}
