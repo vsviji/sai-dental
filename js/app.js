@@ -1216,7 +1216,7 @@ function setDoctorPrescriptionMode(mode){
       });
       frame.dataset.resizeBound='1';
     }
-    if(!frame.src.includes('v=20261028h'))frame.src='./prescription-mockup.html?v=20261028h';
+    if(!frame.src.includes('v=20261028i'))frame.src='./prescription-mockup.html?v=20261028i';
     else{
       resizeDoctorPrescriptionFrame();
       setNewPrescriptionReadOnly(isStaff());
