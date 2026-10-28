@@ -23,7 +23,7 @@
   .brand-clinic{color:#e620bd}
   .doctor{margin-top:10px;font-weight:700;color:#1644ce}
   .credentials{font-size:12px;margin-top:3px}
-  .specialty{grid-column:1/-1;display:flex;justify-content:center;align-items:baseline;gap:.3em;margin-top:-8px;line-height:1.15;font-size:18px;font-weight:800;white-space:nowrap;letter-spacing:-.35px}
+  .specialty{display:flex;align-items:baseline;gap:.3em;margin-top:5px;line-height:1.15;font-size:20px;font-weight:800;white-space:nowrap;letter-spacing:-.35px}
   .specialty-location{color:#1644ce}
   .specialty-services{color:#d915ab}
   .reg{font-size:12px;margin-top:5px;color:#1644ce}
@@ -117,7 +117,7 @@
     .logo{width:66px;height:66px}
     .brand{font-size:clamp(19px,5vw,21px);letter-spacing:0;gap:.2em;white-space:normal}
     .header>div:nth-child(2),.rxbox{min-width:0}
-    .specialty{gap:3px;margin-top:-2px;font-size:clamp(11px,3.8vw,16px);letter-spacing:-.45px}
+    .specialty{gap:3px;margin-top:5px;font-size:clamp(13px,3.8vw,18px);letter-spacing:-.45px}
     .contacts{grid-column:1/-1;grid-template-columns:1fr 1fr;font-size:11px}
     .addresses{grid-template-columns:1fr}
     .address+.address{border-left:0;border-top:1px solid #d7dff2;margin-top:9px;padding-top:12px}
@@ -140,7 +140,7 @@
     .content{height:100%;min-height:0;display:flex;flex-direction:column}
     .header{grid-template-columns:32mm minmax(0,1fr) 50mm;flex:0 0 auto;break-inside:avoid}
     .brand{font-size:22px;gap:.25em}
-    .specialty{gap:1.5mm;margin-top:-2mm;font-size:16px;line-height:1.15}
+    .specialty{gap:1.5mm;margin-top:1.5mm;font-size:16px;line-height:1.15}
     .contacts{font-size:10px}
     .contact-line>span:last-child{overflow-wrap:anywhere;word-break:break-word}
     .addresses,.patient,.rxbox,.diagnosis,.signature,.footer-art{flex-shrink:0;break-inside:avoid}
@@ -174,6 +174,10 @@
         <img class="logo" src="./icons/logo.jpeg" alt="Sai Dental Clinic logo"/>
         <div>
           <div class="brand" aria-label="SAI DENTAL CLINIC"><span>SAI DENTAL</span><span class="brand-clinic">CLINIC</span></div>
+          <div class="specialty">
+            <span class="specialty-location">Mayiladuthurai &amp; Nidur</span>
+            <span class="specialty-services">Root Canal &amp; Implant Center</span>
+          </div>
           <div class="doctor">Dr. S.K. Srinivas <span class="credentials">B.D.S., F.D.S. (ENDO)</span></div>
           <div class="credentials">Dental Surgeon (Fellowship in Root Canal Treatment)</div>
           <div class="reg">Reg. No. 31721</div>
@@ -183,10 +187,6 @@
           <div class="contact-line"><span class="contact-icon instagram" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="18" cy="6" r="1" fill="currentColor" stroke="none"/></svg></span><span><a class="contact-link" href="https://www.instagram.com/sai.dental_clinic/" target="_blank" rel="noopener noreferrer">sai.dental_clinic</a></span></div>
           <div class="contact-line"><span class="contact-icon">⌘</span><span>www.saidentalmayiladuthurai.com</span></div>
           <div class="contact-line"><span class="contact-icon youtube" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.8ZM9.6 15.6V8.4L15.8 12l-6.2 3.6Z"/></svg></span><span><a class="contact-link" href="https://www.youtube.com/@SAIDENTALCLINICDrSrinivas" target="_blank" rel="noopener noreferrer">SAIDENTALCLINICDrSrinivas</a></span></div>
-        </div>
-        <div class="specialty">
-          <span class="specialty-location">Mayiladuthurai &amp; Nidur</span>
-          <span class="specialty-services">Root Canal &amp; Implant Center</span>
         </div>
       </header>
 
